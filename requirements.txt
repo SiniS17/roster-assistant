@@ -1,0 +1,10 @@
+Flask
+openpyxl
+google-api-python-client
+google-auth
+python-dotenv
+Flask
+google-api-python-client
+google-auth
+openpyxl
+python-dotenv
