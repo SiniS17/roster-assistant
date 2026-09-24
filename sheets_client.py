@@ -34,7 +34,22 @@ def get_service():
     creds_file = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
 
     if creds_json:
-        info = json.loads(creds_json)
+        creds_json = creds_json.strip()
+        # Vercel's env-var UI (and some copy/paste paths) sometimes wraps
+        # the whole value in an extra pair of quotes, or leaves it as
+        # multi-line pretty JSON with real newlines - both break json.loads
+        # with an opaque "char 0" error. Give a clearer diagnosis instead.
+        if len(creds_json) >= 2 and creds_json[0] == '"' and creds_json[-1] == '"':
+            creds_json = creds_json[1:-1]
+        try:
+            info = json.loads(creds_json)
+        except json.JSONDecodeError as e:
+            preview = f"{len(creds_json)} chars, starts with {creds_json[:12]!r}" if creds_json else "EMPTY"
+            raise RuntimeError(
+                f"GOOGLE_SERVICE_ACCOUNT_JSON is set but is not valid JSON ({preview}). "
+                "Make sure you pasted the MINIFIED one-line JSON (see HOW_IT_WORKS.md), "
+                "with no extra surrounding quotes, and that you redeployed after setting it."
+            ) from e
         creds = Credentials.from_service_account_info(info, scopes=SCOPES)
     elif creds_file:
         creds = Credentials.from_service_account_file(creds_file, scopes=SCOPES)
