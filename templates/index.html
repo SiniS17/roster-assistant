@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <title>KHDT → Roster</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main>
+    <h1>KHDT → Roster</h1>
+    <p class="sub">Upload the KHDT training-plan file. It will be matched against the Roster Google Sheet below and marked directly.</p>
+
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <div class="flash">
+          {% for m in messages %}<p>{{ m }}</p>{% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <form action="{{ url_for('run') }}" method="post" enctype="multipart/form-data">
+      <label>
+        KHDT file (.xlsx)
+        <input type="file" name="khdt_file" accept=".xlsx" required>
+      </label>
+
+      <label>
+        Roster Google Sheet URL
+        <input type="url" name="sheet_url" value="{{ default_sheet_url }}">
+      </label>
+
+      <label class="checkbox">
+        <input type="checkbox" name="force">
+        Overwrite cells that already have content (--force)
+      </label>
+
+      <button type="submit">Run</button>
+    </form>
+
+    <p class="note">First time? See <code>HOW_IT_WORKS.md</code> in the repo for what this does to your data and how to set up Google Sheet access.</p>
+  </main>
+</body>
+</html>

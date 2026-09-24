@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <title>KHDT → Roster — Kết quả</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main>
+    <h1>Done</h1>
+
+    <table class="stats">
+      <tr><td>Cells marked</td><td>{{ stats.marked }}</td></tr>
+      <tr><td>Weekend N cells</td><td>{{ stats.weekend_n }}</td></tr>
+      <tr><td>Overlaps combined</td><td>{{ stats.overlaps_combined }}</td></tr>
+      <tr><td>Already marked (skipped)</td><td>{{ stats.already_marked }}</td></tr>
+      <tr><td>Conflicts noted</td><td>{{ stats.conflicts }}</td></tr>
+      <tr><td>IDs not in roster</td><td>{{ stats.no_id_match }}</td></tr>
+      <tr><td>No date overlap</td><td>{{ stats.no_date_overlap }}</td></tr>
+      <tr><td>Name/ID mismatches</td><td>{{ stats.name_mismatch }}</td></tr>
+    </table>
+
+    <p>
+      <a href="{{ sheet_url }}" target="_blank" rel="noopener">Open the Sheet</a>
+      &middot;
+      <a download="khdt_run_log.xlsx" href="data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,{{ log_b64 }}">Download full log (.xlsx)</a>
+      &middot;
+      <a href="{{ url_for('index') }}">Run again</a>
+    </p>
+
+    <h2>Log</h2>
+    <pre class="log">{% for line in log_lines %}{{ line }}
+{% endfor %}</pre>
+  </main>
+</body>
+</html>

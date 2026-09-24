@@ -1,0 +1,16 @@
+body { font-family: -apple-system, Segoe UI, sans-serif; background: #f7f7f9; color: #1a1a1a; }
+main { max-width: 720px; margin: 40px auto; padding: 24px 28px; background: #fff; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+h1 { margin-top: 0; }
+.sub { color: #555; }
+form { display: flex; flex-direction: column; gap: 16px; margin-top: 24px; }
+label { display: flex; flex-direction: column; gap: 6px; font-weight: 600; font-size: 14px; }
+label.checkbox { flex-direction: row; align-items: center; font-weight: 400; }
+input[type="file"], input[type="url"] { padding: 8px; border: 1px solid #ccc; border-radius: 6px; font: inherit; }
+button { padding: 10px 16px; border: none; border-radius: 6px; background: #1a73e8; color: #fff; font-weight: 600; cursor: pointer; width: fit-content; }
+button:hover { background: #1558b0; }
+.flash { background: #fde7e9; border: 1px solid #f5b5bb; padding: 10px 14px; border-radius: 6px; margin-top: 16px; }
+.note { color: #777; font-size: 13px; margin-top: 28px; }
+table.stats { border-collapse: collapse; margin: 16px 0; }
+table.stats td { padding: 4px 12px; border-bottom: 1px solid #eee; }
+table.stats td:last-child { text-align: right; font-weight: 600; }
+pre.log { background: #0d1117; color: #c9d1d9; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 12px; max-height: 480px; }
