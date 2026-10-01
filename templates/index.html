@@ -1,43 +1,329 @@
-<!DOCTYPE html>
-<html lang="vi">
+<!doctype html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>KHDT → Roster</title>
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roster Assistant</title>
+<style>
+:root{
+  --bg:#07090b; --panel:#0d1115; --panel2:#131920; --line:#1e262e; --text:#e7ebf0; --muted:#7f8a98;
+  --green:#19c37d; --amber:#f0a73a; --red:#ef5350; --blue:#4c8dff;
+  --z:1; --cw:calc(64px*var(--z)); --rh:calc(40px*var(--z)); --nw:250px;
+  font-family:"Segoe UI",system-ui,-apple-system,Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--text)}
+body{display:flex;flex-direction:column;overflow:hidden;font-size:13px}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+
+/* top bar */
+.top{display:flex;align-items:center;gap:14px;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--line)}
+.icon-btn{width:36px;height:36px;display:grid;place-items:center;background:transparent;border:1px solid var(--line);border-radius:8px}
+.icon-btn:hover{background:var(--panel2)}
+.brand{font-weight:700;letter-spacing:.02em;line-height:1.1}
+.brand small{display:block;font-weight:500;color:var(--muted);font-size:11px;letter-spacing:.04em}
+.tabs{display:flex;gap:6px;margin-left:10px;overflow-x:auto;scrollbar-width:none;min-width:0}
+.tab{white-space:nowrap;padding:7px 14px;border-radius:8px;border:1px solid transparent;background:transparent;color:var(--muted)}
+.tab:hover{color:var(--text)}
+.tab.on{background:var(--panel2);border-color:#2b3641;color:var(--text)}
+.spacer{flex:1}
+.month{padding:7px 14px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);white-space:nowrap}
+.zoom{display:flex;align-items:center;border:1px solid var(--line);border-radius:8px;background:var(--panel2)}
+.zoom button{width:30px;height:32px;background:none;border:0;font-size:16px}
+.zoom span{min-width:46px;text-align:center;font-variant-numeric:tabular-nums;color:var(--muted)}
+.search{width:200px;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel2)}
+.search::placeholder{color:var(--muted)}
+
+/* stats */
+.stats{display:flex;flex-wrap:wrap;gap:6px 22px;align-items:center;padding:9px 16px;border-bottom:1px solid var(--line);background:#0a0d10;color:var(--muted)}
+.stats b{color:var(--text);font-variant-numeric:tabular-nums}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px}
+.legend{margin-left:auto;display:flex;flex-wrap:wrap;gap:6px}
+.lg{padding:2px 9px;border-radius:5px;border:1px solid;font-size:11px}
+
+/* grid */
+.wrap{flex:1;overflow:auto;position:relative}
+table{border-collapse:separate;border-spacing:0;font-size:calc(12px*var(--z))}
+th,td{padding:0;border-right:1px solid #11161b;border-bottom:1px solid #11161b}
+thead th{position:sticky;top:0;z-index:3;background:var(--panel);height:calc(46px*var(--z));min-width:var(--cw);max-width:var(--cw);text-align:center;font-weight:600}
+thead th small{display:block;font-size:.8em;color:var(--muted);font-weight:600;letter-spacing:.04em}
+thead th.we,td.we{background-image:linear-gradient(rgba(255,255,255,.025),rgba(255,255,255,.025))}
+thead th.we small{color:#c97b7b}
+thead th.today{box-shadow:inset 0 -2px var(--green)} thead th.today small{color:var(--green)}
+td.day{height:var(--rh);min-width:var(--cw);max-width:var(--cw);text-align:center;padding:3px}
+td.day.today{background-color:rgba(25,195,125,.06)}
+.name{position:sticky;left:0;z-index:2;background:var(--bg);min-width:var(--nw);max-width:var(--nw);padding:0 12px;text-align:left}
+thead th.name{z-index:4;background:var(--panel);text-align:left;color:var(--muted);font-weight:600}
+tbody tr:hover td{background-color:rgba(255,255,255,.035)}
+tbody tr:hover td.name{background-color:#10151a}
+.who{display:flex;align-items:center;gap:10px;height:var(--rh)}
+.idx{width:16px;color:#4b5561;text-align:right;font-variant-numeric:tabular-nums}
+.av{width:28px;height:28px;border-radius:50%;background:#1a222a;border:1px solid #28323c;display:grid;place-items:center;font-weight:700;flex:none}
+.who b{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px}
+.who small{display:block;color:var(--muted);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:170px}
+.who small i{color:var(--green);font-style:normal}
+
+.chip{display:block;height:100%;min-height:calc(28px*var(--z));line-height:calc(28px*var(--z));border-radius:6px;border:1px solid;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 4px}
+.k-n{color:#6c7683;border-color:transparent;font-weight:500}
+.k-nred{color:#ff7b78;background:rgba(239,83,80,.12);border-color:rgba(239,83,80,.35)}
+.k-h{color:var(--amber);background:rgba(240,167,58,.12);border-color:rgba(240,167,58,.4)}
+.k-o{color:hsl(var(--h) 80% 70%);background:hsl(var(--h) 60% 50%/.14);border-color:hsl(var(--h) 60% 55%/.4)}
+.upd{animation:pulse 1.6s ease-out 3}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(25,195,125,.9)}100%{box-shadow:0 0 0 9px rgba(25,195,125,0)}}
+@media (prefers-reduced-motion:reduce){.upd{animation:none;outline:2px solid var(--green)}}
+
+.msg{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:30px;color:var(--muted)}
+.msg div{max-width:520px}
+.msg code{display:block;margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:#ff9a98;text-align:left;white-space:pre-wrap;word-break:break-word}
+.btn{padding:8px 16px;border-radius:8px;border:1px solid #2b3641;background:var(--panel2)}
+.btn:hover{background:#18212a}
+.btn.primary{background:#1565d8;border-color:#1565d8;color:#fff;font-weight:600}
+.btn.primary:hover{background:#1a73f0}
+.btn[disabled]{opacity:.55;cursor:wait}
+
+/* side menu */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.55);opacity:0;pointer-events:none;transition:opacity .2s;z-index:20}
+.scrim.on{opacity:1;pointer-events:auto}
+.drawer{position:fixed;top:0;bottom:0;left:0;width:280px;background:var(--panel);border-right:1px solid var(--line);transform:translateX(-100%);transition:transform .22s ease;z-index:21;display:flex;flex-direction:column}
+.drawer.on{transform:none}
+.drawer header{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--line)}
+.logo{width:34px;height:34px;border-radius:9px;background:var(--green);display:grid;place-items:center;color:#04140c;font-weight:800}
+.nav{padding:10px;display:flex;flex-direction:column;gap:2px}
+.nav a,.nav button{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:11px 12px;border-radius:8px;border:0;background:none;color:var(--text);text-decoration:none}
+.nav a:hover,.nav button:hover{background:var(--panel2)}
+.nav .on{background:var(--panel2);box-shadow:inset 3px 0 var(--green)}
+.nav hr{border:0;border-top:1px solid var(--line);margin:8px 4px}
+
+/* KHDT dialog */
+dialog{padding:0;border:1px solid #2b3641;border-radius:14px;background:var(--panel);color:var(--text);width:min(640px,94vw);max-height:90vh;overflow:auto}
+dialog::backdrop{background:rgba(0,0,0,.65)}
+.dlg{padding:22px 24px}
+.dlg h2{margin:0 0 6px;font-size:20px}
+.dlg p{margin:0 0 16px;color:var(--muted);line-height:1.5}
+.dlg label{display:block;margin:14px 0 6px;font-weight:600}
+.dlg input[type=file],.dlg input[type=text]{width:100%;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel2)}
+.dlg .row{display:flex;gap:10px;margin-top:18px;align-items:center}
+.dlg .chk{display:flex;gap:8px;align-items:center;margin-top:14px;font-weight:400}
+.pills{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}
+.pill{padding:5px 11px;border:1px solid var(--line);border-radius:999px;background:var(--panel2)}
+.pill b{font-variant-numeric:tabular-nums}
+.log{max-height:240px;overflow:auto;padding:10px;border:1px solid var(--line);border-radius:8px;background:#080b0e;font:12px/1.55 Consolas,monospace;white-space:pre-wrap;word-break:break-word}
+.err{margin-top:14px;padding:10px 12px;border:1px solid rgba(239,83,80,.4);border-radius:8px;background:rgba(239,83,80,.1);color:#ff9a98;white-space:pre-wrap;word-break:break-word}
+@media (max-width:760px){.search{width:120px}.legend{display:none}.month{display:none}.brand small{display:none}}
+</style>
 </head>
 <body>
-  <main>
-    <h1>KHDT → Roster</h1>
-    <p class="sub">Upload the KHDT training-plan file. It will be matched against the Roster Google Sheet below and marked directly.</p>
 
-    {% with messages = get_flashed_messages() %}
-      {% if messages %}
-        <div class="flash">
-          {% for m in messages %}<p>{{ m }}</p>{% endfor %}
-        </div>
-      {% endif %}
-    {% endwith %}
+<div class="top">
+  <button class="icon-btn" id="menuBtn" aria-label="Open menu" aria-expanded="false">
+    <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 4h14M2 9h14M2 14h14"/></svg>
+  </button>
+  <div class="brand">Roster Assistant<small id="sub">VAECO</small></div>
+  <div class="tabs" id="tabs"></div>
+  <div class="spacer"></div>
+  <div class="month" id="month">–</div>
+  <div class="zoom"><button id="zOut" aria-label="Zoom out">−</button><span id="zVal">100%</span><button id="zIn" aria-label="Zoom in">+</button></div>
+  <input class="search" id="q" type="search" placeholder="Search name or ID" aria-label="Search employees">
+  <button class="icon-btn" id="reload" aria-label="Reload roster" title="Reload from Google Sheet">
+    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"/></svg>
+  </button>
+</div>
 
-    <form action="{{ url_for('run') }}" method="post" enctype="multipart/form-data">
-      <label>
-        KHDT file (.xlsx)
-        <input type="file" name="khdt_file" accept=".xlsx" required>
-      </label>
+<div class="stats" id="stats"></div>
+<div class="wrap" id="wrap"><div class="msg" id="msg">Loading roster…</div></div>
 
-      <label>
-        Roster Google Sheet URL
-        <input type="url" name="sheet_url" value="{{ default_sheet_url }}">
-      </label>
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" aria-label="Menu">
+  <header><div class="logo">R</div><div class="brand">Roster Assistant<small>Menu</small></div></header>
+  <nav class="nav">
+    <button class="on" id="navRoster">Roster</button>
+    <button id="navKhdt">KHDT → Roster</button>
+    <hr>
+    <a id="navSheet" href="#" target="_blank" rel="noopener">Open Google Sheet</a>
+    <a href="https://github.com/SiniS17/roster-assistant/blob/main/HOW_IT_WORKS.md" target="_blank" rel="noopener">How it works</a>
+  </nav>
+</aside>
 
-      <label class="checkbox">
-        <input type="checkbox" name="force">
-        Overwrite cells that already have content (--force)
-      </label>
+<dialog id="khdt">
+  <form class="dlg" id="khdtForm">
+    <h2>KHDT → Roster</h2>
+    <p>Upload the KHDT training-plan file. It is matched against the Roster Google Sheet and marked directly.</p>
+    <label for="file">KHDT file (.xlsx)</label>
+    <input id="file" name="khdt_file" type="file" accept=".xlsx" required>
+    <label for="url">Roster Google Sheet URL</label>
+    <input id="url" name="sheet_url" type="text">
+    <label class="chk"><input type="checkbox" name="force" id="force"> Overwrite cells that already have content (--force)</label>
+    <div class="row">
+      <button class="btn primary" id="runBtn" type="submit">Run</button>
+      <button class="btn" type="button" id="closeDlg">Close</button>
+    </div>
+    <div id="out"></div>
+  </form>
+</dialog>
 
-      <button type="submit">Run</button>
-    </form>
+<script>
+const DEFAULT_URL = {{ default_sheet_url|tojson }};
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fold = s => String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d').replace(/Đ/g,'D').toLowerCase();
+const WD = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
+const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
-    <p class="note">First time? See <code>HOW_IT_WORKS.md</code> in the repo for what this does to your data and how to set up Google Sheet access.</p>
-  </main>
+const S = { url:'', gid:'', data:null, zoom:1, updated:new Set() };
+
+/* ---------- side menu ---------- */
+function menu(open){
+  $('drawer').classList.toggle('on', open); $('scrim').classList.toggle('on', open);
+  $('menuBtn').setAttribute('aria-expanded', open);
+}
+$('menuBtn').onclick = () => menu(!$('drawer').classList.contains('on'));
+$('scrim').onclick = () => menu(false);
+document.addEventListener('keydown', e => { if(e.key === 'Escape') menu(false); });
+$('navRoster').onclick = () => menu(false);
+$('navKhdt').onclick = () => { menu(false); $('url').value = S.url || DEFAULT_URL; $('khdt').showModal(); };
+$('closeDlg').onclick = () => $('khdt').close();
+
+/* ---------- zoom / search ---------- */
+function setZoom(z){
+  S.zoom = Math.min(1.6, Math.max(.6, z));
+  document.documentElement.style.setProperty('--z', S.zoom);
+  $('zVal').textContent = Math.round(S.zoom*100) + '%';
+}
+$('zIn').onclick = () => setZoom(S.zoom + .1);
+$('zOut').onclick = () => setZoom(S.zoom - .1);
+$('q').oninput = () => render();
+$('reload').onclick = () => load();
+
+/* ---------- loading ---------- */
+async function load(){
+  $('wrap').innerHTML = '<div class="msg">Loading roster…</div>';
+  const p = new URLSearchParams();
+  if(S.url) p.set('url', S.url);
+  if(S.gid !== '') p.set('gid', S.gid);
+  try{
+    const r = await fetch('/api/roster?' + p);
+    const j = await r.json();
+    if(!j.ok) throw new Error(j.error || 'Unknown error');
+    S.data = j; S.gid = j.gid;
+    $('navSheet').href = j.sheet_url;
+    render();
+  }catch(e){
+    S.data = null; $('stats').innerHTML = ''; $('tabs').innerHTML = '';
+    $('wrap').innerHTML = '<div class="msg"><div><b>Couldn\u2019t load the roster</b>' +
+      '<code>' + esc(e.message) + '</code><p>Check that the Sheet is shared with the service account and the Google credentials are set (see HOW_IT_WORKS.md).</p>' +
+      '<button class="btn" onclick="load()">Try again</button></div></div>';
+  }
+}
+
+/* ---------- cells ---------- */
+const isRed = c => c && /^FF0000$/i.test(c.slice(-6));
+function hue(s){ let h = 0; for(const ch of s) h = (h*31 + ch.charCodeAt(0)) % 360; return h; }
+function kindOf(v, color){
+  if(!v) return null;
+  const u = v.trim().toUpperCase();
+  if(u === 'N') return isRed(color) ? 'nred' : 'n';
+  if(u.startsWith('H ')) return 'h';
+  return 'o';
+}
+
+/* ---------- render ---------- */
+function render(){
+  const d = S.data; if(!d) return;
+  const dates = d.dates.map(s => { const [y,m,da] = s.split('-').map(Number); return new Date(y, m-1, da); });
+  const today = new Date(); today.setHours(0,0,0,0);
+  const sameDay = (a,b) => a.getTime() === b.getTime();
+
+  // header: tabs + month
+  $('tabs').innerHTML = d.tabs.map(t => `<button class="tab ${t.gid === d.gid ? 'on':''}" data-gid="${t.gid}">${esc(t.title)}</button>`).join('');
+  $('tabs').querySelectorAll('.tab').forEach(b => b.onclick = () => { S.gid = b.dataset.gid; load(); });
+  const first = dates[0], last = dates[dates.length-1];
+  $('month').textContent = first.getMonth() === last.getMonth() ? `${MONTHS[first.getMonth()]} ${first.getFullYear()}`
+    : `${MON[first.getMonth()]} – ${MON[last.getMonth()]} ${last.getFullYear()}`;
+
+  // stats + legend
+  let hCount = 0, redN = 0, hToday = 0; const codes = {};
+  d.employees.forEach(e => e.cells.forEach((v,i) => {
+    const k = kindOf(v, e.colors[i]); if(!k) return;
+    if(k === 'h'){ hCount++; if(sameDay(dates[i], today)) hToday++; }
+    if(k === 'nred') redN++;
+    if(k === 'o'){ const c = v.trim().toUpperCase(); codes[c] = (codes[c]||0) + 1; }
+  }));
+  const topCodes = Object.entries(codes).sort((a,b) => b[1]-a[1]).slice(0, 6);
+  $('stats').innerHTML =
+    `<span><span class="dot" style="background:var(--green)"></span>Headcount <b>${d.employees.length}</b></span>` +
+    `<span><span class="dot" style="background:var(--amber)"></span>Training days (H) <b>${hCount}</b></span>` +
+    (dates.some(x => sameDay(x, today)) ? `<span>In training today <b>${hToday}</b></span>` : '') +
+    `<span><span class="dot" style="background:var(--red)"></span>Guaranteed days off <b>${redN}</b></span>` +
+    `<span class="legend"><span class="lg k-h">H course</span><span class="lg k-nred">N red</span><span class="lg k-n" style="border-color:#2a323b">N</span>` +
+    topCodes.map(([c]) => `<span class="lg k-o" style="--h:${hue(c)}">${esc(c)}</span>`).join('') + `</span>`;
+
+  // table
+  const q = fold($('q').value.trim());
+  const rows = d.employees.filter(e => !q || fold(e.name).includes(q) || fold(e.id).includes(q));
+  let h = '<table><thead><tr><th class="name">EMPLOYEE</th>';
+  dates.forEach(dt => {
+    const cls = [dt.getDay()===0||dt.getDay()===6 ? 'we':'', sameDay(dt,today) ? 'today':''].join(' ');
+    h += `<th class="${cls}"><small>${WD[dt.getDay()]}</small>${dt.getDate()}-${MON[dt.getMonth()]}</th>`;
+  });
+  h += '</tr></thead><tbody>';
+  rows.forEach((e, n) => {
+    const initial = (e.name.trim()[0] || '?').toUpperCase();
+    h += `<tr><td class="name"><div class="who"><span class="idx">${n+1}</span><span class="av">${esc(initial)}</span>` +
+         `<span><b title="${esc(e.name)}">${esc(e.name)}</b><small><i>${esc(e.id)}</i>${e.info.length ? ' · ' + esc(e.info.join(' · ')) : ''}</small></span></div></td>`;
+    e.cells.forEach((v, i) => {
+      const dt = dates[i], k = kindOf(v, e.colors[i]);
+      const cls = ['day', dt.getDay()===0||dt.getDay()===6 ? 'we':'', sameDay(dt,today) ? 'today':''].join(' ');
+      let inner = '';
+      if(k){
+        const up = S.updated.has(e.row + ':' + d.cols[i]) ? ' upd' : '';
+        const style = k === 'o' ? ` style="--h:${hue(v.trim().toUpperCase())}"` : '';
+        inner = `<span class="chip k-${k}${up}"${style} title="${esc(e.name)} · ${dt.getDate()}/${dt.getMonth()+1} · ${esc(v)}">${esc(k === 'h' ? v.trim().slice(2) : v)}</span>`;
+      }
+      h += `<td class="${cls}">${inner}</td>`;
+    });
+    h += '</tr>';
+  });
+  h += '</tbody></table>';
+  if(!rows.length) h += '<div class="msg">No employee matches your search.</div>';
+  $('wrap').innerHTML = h;
+}
+
+/* ---------- KHDT run ---------- */
+$('khdtForm').onsubmit = async ev => {
+  ev.preventDefault();
+  const btn = $('runBtn'), out = $('out');
+  btn.disabled = true; btn.textContent = 'Running…'; out.innerHTML = '';
+  try{
+    const r = await fetch('/run', { method:'POST', body:new FormData($('khdtForm')), headers:{'X-Requested-With':'fetch'} });
+    const j = await r.json();
+    if(!j.ok) throw new Error(j.error || 'Run failed');
+    const labels = { marked:'Marked', conflicts:'Conflicts', overlaps_combined:'Overlaps combined', weekend_n:'Weekend N', already_marked:'Already marked', no_id_match:'No ID match', name_mismatch:'Name mismatch', no_date_overlap:'Outside date range' };
+    out.innerHTML = '<div class="pills">' + Object.entries(labels).map(([k,t]) => `<span class="pill">${t} <b>${j.stats[k] ?? 0}</b></span>`).join('') + '</div>' +
+      '<div class="log">' + esc(j.log.join('\n')) + '</div>' +
+      '<div class="row"><button class="btn" type="button" id="dl">Download log (.xlsx)</button><button class="btn primary" type="button" id="see">View updated roster</button></div>';
+    $('dl').onclick = () => {
+      const bin = atob(j.log_b64), buf = new Uint8Array(bin.length);
+      for(let i=0;i<bin.length;i++) buf[i] = bin.charCodeAt(i);
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
+      a.download = 'khdt_roster_log.xlsx'; a.click(); URL.revokeObjectURL(a.href);
+    };
+    S.updated = new Set(j.updated.map(([r,c]) => r + ':' + c));
+    S.url = $('url').value.trim() === DEFAULT_URL ? '' : $('url').value.trim();
+    S.gid = j.gid;
+    await load();
+    $('see').onclick = () => $('khdt').close();
+  }catch(e){
+    out.innerHTML = '<div class="err">' + esc(e.message) + '</div>';
+  }finally{
+    btn.disabled = false; btn.textContent = 'Run';
+  }
+};
+
+load();
+</script>
 </body>
 </html>
