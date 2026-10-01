@@ -62,7 +62,7 @@ def build_roster_payload(title, values, colors):
                 "row": r,
                 "id": normalize_id(rid),
                 "name": name,
-                "info": [_text(row[c]) for c in info_cols if c < len(row) and _text(row[c])],
+                "info": [_text(row[c]) if c < len(row) else "" for c in info_cols],
                 "cells": [_text(row[c]) if c < len(row) else "" for _, c in ordered],
                 "colors": [(crow[c] if c < len(crow) else None) for _, c in ordered],
             }
@@ -70,6 +70,7 @@ def build_roster_payload(title, values, colors):
 
     return {
         "title": title,
+        "info_headers": [_text(header[c]) for c in info_cols],
         "dates": [d.isoformat() for d, _ in ordered],
         "cols": [c for _, c in ordered],
         "employees": employees,
