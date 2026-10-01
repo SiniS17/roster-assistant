@@ -75,3 +75,68 @@ def build_roster_payload(title, values, colors):
         "cols": [c for _, c in ordered],
         "employees": employees,
     }
+
+
+def tab_url(spreadsheet_id, gid):
+    return f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit?gid={gid}"
+
+
+def find_tab(tabs, name):
+    """Case-insensitive lookup of a tab by title."""
+    for t in tabs:
+        if t["title"].strip().lower() == name.lower():
+            return t
+    return None
+
+
+def rebuild_temp(spreadsheet_id, source_gid):
+    """
+    Make the 'temp' tab an exact copy (values, colours, formatting) of the
+    source tab. Any existing 'temp' tab is replaced, keeping its position.
+    Returns the sheetId of the fresh temp tab.
+    """
+    service = get_service()
+    meta = (
+        service.spreadsheets()
+        .get(spreadsheetId=spreadsheet_id, fields="sheets.properties(sheetId,title,index)")
+        .execute()
+    )
+    props = [s["properties"] for s in meta.get("sheets", [])]
+    src = next(p for p in props if p["sheetId"] == source_gid)
+    old = next((p for p in props if p["title"].strip().lower() == "temp"), None)
+
+    requests = []
+    index = src["index"] + 1
+    title = "temp"
+    if old is not None:
+        index = old["index"]
+        title = old["title"]
+        requests.append({"deleteSheet": {"sheetId": old["sheetId"]}})
+    requests.append(
+        {"duplicateSheet": {"sourceSheetId": source_gid, "insertSheetIndex": index, "newSheetName": title}}
+    )
+    resp = service.spreadsheets().batchUpdate(spreadsheetId=spreadsheet_id, body={"requests": requests}).execute()
+    return resp["replies"][-1]["duplicateSheet"]["properties"]["sheetId"]
+
+
+def _cell_map(payload):
+    out = {}
+    for e in payload["employees"]:
+        key = e["id"] or e["name"]
+        for d, v in zip(payload["dates"], e["cells"]):
+            out[f"{key}|{d}"] = v
+    return out
+
+
+def diff_main_temp(main_payload, temp_payload):
+    """
+    Cells whose value in temp differs from Main.
+    Returns {"<id>|<YYYY-MM-DD>": <value in Main>} (Main value is '' for new entries).
+    """
+    main = _cell_map(main_payload)
+    changed = {}
+    for key, tv in _cell_map(temp_payload).items():
+        mv = main.get(key, "")
+        if mv.strip() != tv.strip():
+            changed[key] = mv
+    return changed

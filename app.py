@@ -5,7 +5,8 @@ Website version of the KHDT -> Roster tool.
 
 GET /            roster page (reads the built-in default Roster Google Sheet)
 GET /api/roster  roster grid as JSON (?url=<sheet url>&gid=<tab id>)
-POST /run        KHDT upload. With the page's fetch() call it answers JSON;
+POST /run        KHDT upload. Changes go to the 'temp' tab, never straight into 'Main'.
+                  With the page's fetch() call it answers JSON;
                  a plain browser form post still gets the old result page.
 
 See HOW_IT_WORKS.md for what this does to your files/sheet, and the
@@ -25,7 +26,7 @@ from flask import Flask, flash, jsonify, redirect, render_template, request, url
 from config import DEFAULT_ROSTER_SHEET_URL
 from engine import load_khdt, mark_roster_grid
 from log_workbook import write_log_workbook
-from roster_view import build_roster_payload, list_tabs
+from roster_view import build_roster_payload, diff_main_temp, find_tab, list_tabs, rebuild_temp, tab_url
 from sheets_client import parse_sheet_url, read_roster_grid, write_roster_updates
 
 app = Flask(__name__)
@@ -47,13 +48,34 @@ def api_roster():
     gid = (request.args.get("gid") or "").strip()
     try:
         spreadsheet_id, _ = parse_sheet_url(sheet_url)
-        if gid.isdigit():
-            sheet_url = f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit?gid={gid}"
         tabs = list_tabs(spreadsheet_id)
+        main_tab, temp_tab = find_tab(tabs, "main"), find_tab(tabs, "temp")
+        if not gid.isdigit() and main_tab:
+            gid = str(main_tab["gid"])  # open on Main unless a tab was asked for
+        if gid.isdigit():
+            sheet_url = tab_url(spreadsheet_id, gid)
         _, sheet_id, title, values, colors = read_roster_grid(sheet_url)
         payload = build_roster_payload(title, values, colors)
     except Exception as e:
         return jsonify(ok=False, error=f"{type(e).__name__}: {e}"), 400
+
+    # Compare Main with temp (best effort - never blocks the roster itself).
+    payload["view"] = title.strip().lower()
+    payload["pending"] = 0
+    payload["changed"] = {}
+    if main_tab and temp_tab and payload["view"] in ("main", "temp"):
+        try:
+            other_tab = temp_tab if payload["view"] == "main" else main_tab
+            _, _, o_title, o_values, o_colors = read_roster_grid(tab_url(spreadsheet_id, other_tab["gid"]))
+            other = build_roster_payload(o_title, o_values, o_colors)
+            main_p, temp_p = (payload, other) if payload["view"] == "main" else (other, payload)
+            changed = diff_main_temp(main_p, temp_p)
+            payload["pending"] = len(changed)
+            if payload["view"] == "temp":
+                payload["changed"] = changed
+        except Exception:
+            pass
+
     payload.update(
         ok=True,
         tabs=tabs,
@@ -68,6 +90,7 @@ def run():
     khdt_file = request.files.get("khdt_file")
     sheet_url = (request.form.get("sheet_url") or "").strip() or DEFAULT_ROSTER_SHEET_URL
     force = request.form.get("force") == "on"
+    keep = request.form.get("keep") == "on"
 
     def fail(message, status=400):
         if _wants_json():
@@ -85,16 +108,31 @@ def run():
         khdt_rows = load_khdt(khdt_file.stream)
         log_lines.append(f"Loaded {len(khdt_rows)} KHDT rows from {khdt_file.filename}")
 
-        spreadsheet_id, sheet_id, title, values, colors = read_roster_grid(sheet_url)
-        log_lines.append(f"Loaded Roster sheet tab '{title}' ({len(values)} rows x {len(values[0]) if values else 0} cols)")
+        spreadsheet_id, _ = parse_sheet_url(sheet_url)
+        tabs = list_tabs(spreadsheet_id)
+        main_tab, temp_tab = find_tab(tabs, "main"), find_tab(tabs, "temp")
+        if not main_tab:
+            raise ValueError("Couldn't find a tab named 'Main' in that spreadsheet - rename the live roster tab to 'Main'.")
+
+        # Base = Main (fresh start) or the current temp (keep earlier temp changes).
+        use_temp_base = keep and temp_tab is not None
+        base_tab = temp_tab if use_temp_base else main_tab
+        _, _, title, values, colors = read_roster_grid(tab_url(spreadsheet_id, base_tab["gid"]))
+        log_lines.append(f"Loaded Roster tab '{title}' ({len(values)} rows x {len(values[0]) if values else 0} cols)")
 
         stats, updates = mark_roster_grid(
             khdt_rows, values, colors, force=force, log=log_lines.append, event_log=event_log
         )
 
+        if use_temp_base:
+            temp_gid = temp_tab["gid"]
+        else:
+            temp_gid = rebuild_temp(spreadsheet_id, main_tab["gid"])
+            log_lines.append("Reset tab 'temp' to a fresh copy of 'Main'")
+        sheet_id = temp_gid
         if updates:
-            write_roster_updates(spreadsheet_id, sheet_id, updates)
-            log_lines.append(f"Wrote {len(updates)} cell update(s) back to the Sheet")
+            write_roster_updates(spreadsheet_id, temp_gid, updates)
+        log_lines.append(f"Wrote {len(updates)} cell change(s) to tab 'temp' - 'Main' was not touched")
     except Exception as e:
         return fail(f"Error: {type(e).__name__}: {e}")
 
