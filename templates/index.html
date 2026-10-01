@@ -73,9 +73,17 @@ tbody tr:hover td.name{background-color:#10151a}
 .k-nred{color:#ff7b78;background:rgba(239,83,80,.12);border-color:rgba(239,83,80,.35)}
 .k-h{color:var(--amber);background:rgba(240,167,58,.12);border-color:rgba(240,167,58,.4)}
 .k-o{color:hsl(var(--h) 80% 70%);background:hsl(var(--h) 60% 50%/.14);border-color:hsl(var(--h) 60% 55%/.4)}
+.chg{animation:flick 2.2s ease-in-out infinite}
+@keyframes flick{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(25,195,125,0)}50%{opacity:.55;box-shadow:0 0 9px 1px rgba(25,195,125,.5)}}
+.ghost{color:#8a94a2;background:transparent;border:1px dashed #4b5561;text-decoration:line-through;font-weight:500}
+.badge{display:inline-block;margin-left:7px;padding:0 7px;border-radius:999px;background:var(--amber);color:#1a1203;font-size:11px;font-weight:700;line-height:17px}
+.note{padding:7px 16px;border-bottom:1px solid var(--line);background:#0c1410;color:#8fd9b6;display:flex;gap:12px;align-items:center}
+.note[hidden]{display:none}
+.note.warn{background:#17120a;color:#e9c27d}
+.note button{padding:3px 12px;border-radius:6px;border:1px solid currentColor;background:none;color:inherit}
 .upd{animation:pulse 1.6s ease-out 3}
 @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(25,195,125,.9)}100%{box-shadow:0 0 0 9px rgba(25,195,125,0)}}
-@media (prefers-reduced-motion:reduce){.upd{animation:none;outline:2px solid var(--green)}}
+@media (prefers-reduced-motion:reduce){.upd{animation:none;outline:2px solid var(--green)}.chg{animation:none;outline:2px dashed var(--green)}}
 
 .msg{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:30px;color:var(--muted)}
 .msg div{max-width:520px}
@@ -136,6 +144,7 @@ dialog::backdrop{background:rgba(0,0,0,.65)}
 </div>
 
 <div class="stats" id="stats"></div>
+<div class="note" id="note" hidden></div>
 <div class="wrap" id="wrap"><div class="msg" id="msg">Loading roster…</div></div>
 
 <div class="scrim" id="scrim"></div>
@@ -153,12 +162,13 @@ dialog::backdrop{background:rgba(0,0,0,.65)}
 <dialog id="khdt">
   <form class="dlg" id="khdtForm">
     <h2>KHDT → Roster</h2>
-    <p>Upload the KHDT training-plan file. It is matched against the Roster Google Sheet and marked directly.</p>
+    <p>Upload the KHDT training-plan file. Changes are written to the “temp” tab so you can review them — the Main tab is never modified.</p>
     <label for="file">KHDT file (.xlsx)</label>
     <input id="file" name="khdt_file" type="file" accept=".xlsx" required>
     <label for="url">Roster Google Sheet URL</label>
     <input id="url" name="sheet_url" type="text">
     <label class="chk"><input type="checkbox" name="force" id="force"> Overwrite cells that already have content (--force)</label>
+    <label class="chk"><input type="checkbox" name="keep" id="keep"> Add to the changes already in temp (otherwise temp restarts from Main)</label>
     <div class="row">
       <button class="btn primary" id="runBtn" type="submit">Run</button>
       <button class="btn" type="button" id="closeDlg">Close</button>
@@ -242,7 +252,17 @@ function render(){
   const sameDay = (a,b) => a.getTime() === b.getTime();
 
   // header: tabs + month
-  $('tabs').innerHTML = d.tabs.map(t => `<button class="tab ${t.gid === d.gid ? 'on':''}" data-gid="${t.gid}">${esc(t.title)}</button>`).join('');
+  $('tabs').innerHTML = d.tabs.map(t => `<button class="tab ${t.gid === d.gid ? 'on':''}" data-gid="${t.gid}">${esc(t.title)}${t.title.trim().toLowerCase()==='temp' && d.pending ? `<span class="badge" title="${d.pending} cell(s) differ from Main">${d.pending}</span>` : ''}</button>`).join('');
+  // note bar
+  const note = $('note'), tempTab = d.tabs.find(t => t.title.trim().toLowerCase()==='temp');
+  if(d.view === 'temp'){
+    note.hidden = false; note.className = 'note';
+    note.innerHTML = d.pending ? `<span>Previewing <b>temp</b>: ${d.pending} cell(s) differ from Main (flickering). Main is unchanged.</span>` : `<span>Previewing <b>temp</b>: identical to Main.</span>`;
+  } else if(d.view === 'main' && d.pending && tempTab){
+    note.hidden = false; note.className = 'note warn';
+    note.innerHTML = `<span><b>temp</b> has ${d.pending} pending change(s) from a KHDT run.</span><button id="seeTemp">Review in temp</button>`;
+    $('seeTemp').onclick = () => { S.gid = tempTab.gid; load(); };
+  } else note.hidden = true;
   $('tabs').querySelectorAll('.tab').forEach(b => b.onclick = () => { S.gid = b.dataset.gid; load(); });
   const first = dates[0], last = dates[dates.length-1];
   $('month').textContent = first.getMonth() === last.getMonth() ? `${MONTHS[first.getMonth()]} ${first.getFullYear()}`
@@ -290,7 +310,9 @@ function render(){
     h += `<th class="${cls}"><small>${WD[dt.getDay()]}</small>${dt.getDate()}-${MON[dt.getMonth()]}</th>`;
   });
   h += '</tr></thead><tbody>';
-  const sig = (v,c) => { const k = kindOf(v,c); return k ? v.trim().toUpperCase() + '|' + k : null; };
+  const chgMap = d.changed || {};
+  const ckey = (e, i) => (e.id || e.name) + '|' + d.dates[i];
+  const sig = (e, i) => { const k = kindOf(e.cells[i], e.colors[i]); return k ? e.cells[i].trim().toUpperCase() + '|' + k + '|' + (ckey(e,i) in chgMap) : null; };
   rows.forEach((e, n) => {
     const initial = (e.name.trim()[0] || '?').toUpperCase();
     const sub = e.info.filter(Boolean);
@@ -300,20 +322,24 @@ function render(){
     for(let i = 0; i < N; ){
       const v = e.cells[i], k = kindOf(v, e.colors[i]), dt = dates[i];
       if(!k){
-        h += `<td class="day ${isWe(dt) ? 'we':''} ${sameDay(dt,today) ? 'today':''}"></td>`; i++; continue;
+        const old = chgMap[ckey(e, i)];
+        const ghost = old ? `<span class="chip ghost chg" title="${esc(e.name)} · removed in temp (Main: ${esc(old)})">${esc(/^H /i.test(old.trim()) ? old.trim().slice(2) : old)}</span>` : '';
+        h += `<td class="day ${isWe(dt) ? 'we':''} ${sameDay(dt,today) ? 'today':''}">${ghost}</td>`; i++; continue;
       }
       // merge consecutive days that carry the same value into one wide box
-      const key = sig(v, e.colors[i]);
+      const key = sig(e, i);
       let j = i + 1;
-      while(j < N && sig(e.cells[j], e.colors[j]) === key) j++;
+      while(j < N && sig(e, j) === key) j++;
+      const chg = ckey(e, i) in chgMap;
       const span = j - i, end = dates[j-1];
       const hasToday = dates.slice(i, j).some(x => sameDay(x, today));
       const up = e.cells.slice(i, j).some((_, x) => S.updated.has(e.row + ':' + d.cols[i+x])) ? ' upd' : '';
       const style = k === 'o' ? ` style="--h:${hue(v.trim().toUpperCase())}"` : '';
+      const was = chg && span === 1 ? ` · Main: ${chgMap[ckey(e, i)] || '(empty)'}` : (chg ? ' · changed vs Main' : '');
       const range = span > 1 ? `${dt.getDate()}/${dt.getMonth()+1} – ${end.getDate()}/${end.getMonth()+1} (${span} days)` : `${dt.getDate()}/${dt.getMonth()+1}`;
       const label = k === 'h' ? v.trim().slice(2) : v;
       h += `<td class="day ${span > 1 ? 'span':''} ${span === 1 && isWe(dt) ? 'we':''} ${hasToday ? 'today':''}" colspan="${span}">` +
-           `<span class="chip k-${k}${up}"${style} title="${esc(e.name)} · ${range} · ${esc(v)}">${esc(label)}</span></td>`;
+           `<span class="chip k-${k}${up}${chg ? ' chg':''}"${style} title="${esc(e.name)} · ${range} · ${esc(v)}${esc(was)}">${esc(label)}</span></td>`;
       i = j;
     }
     h += '</tr>';
@@ -335,7 +361,7 @@ $('khdtForm').onsubmit = async ev => {
     const labels = { marked:'Marked', conflicts:'Conflicts', overlaps_combined:'Overlaps combined', weekend_n:'Weekend N', already_marked:'Already marked', no_id_match:'No ID match', name_mismatch:'Name mismatch', no_date_overlap:'Outside date range' };
     out.innerHTML = '<div class="pills">' + Object.entries(labels).map(([k,t]) => `<span class="pill">${t} <b>${j.stats[k] ?? 0}</b></span>`).join('') + '</div>' +
       '<div class="log">' + esc(j.log.join('\n')) + '</div>' +
-      '<div class="row"><button class="btn" type="button" id="dl">Download log (.xlsx)</button><button class="btn primary" type="button" id="see">View updated roster</button></div>';
+      '<div class="row"><button class="btn" type="button" id="dl">Download log (.xlsx)</button><button class="btn primary" type="button" id="see">View changes in temp</button></div>';
     $('dl').onclick = () => {
       const bin = atob(j.log_b64), buf = new Uint8Array(bin.length);
       for(let i=0;i<bin.length;i++) buf[i] = bin.charCodeAt(i);
@@ -343,7 +369,7 @@ $('khdtForm').onsubmit = async ev => {
       a.href = URL.createObjectURL(new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'}));
       a.download = 'khdt_roster_log.xlsx'; a.click(); URL.revokeObjectURL(a.href);
     };
-    S.updated = new Set(j.updated.map(([r,c]) => r + ':' + c));
+    S.updated = new Set();
     S.url = $('url').value.trim() === DEFAULT_URL ? '' : $('url').value.trim();
     S.gid = j.gid;
     await load();
