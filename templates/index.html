@@ -35,6 +35,9 @@ button{cursor:pointer}
 .zoom span{min-width:46px;text-align:center;font-variant-numeric:tabular-nums;color:var(--muted)}
 .search{width:200px;padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel2)}
 .search::placeholder{color:var(--muted)}
+select.search{width:auto;max-width:210px;appearance:auto;color-scheme:dark}
+td.day.span{max-width:none;background-image:none}
+td.day.span .chip{padding:0 10px}
 
 /* stats */
 .stats{display:flex;flex-wrap:wrap;gap:6px 22px;align-items:center;padding:9px 16px;border-bottom:1px solid var(--line);background:#0a0d10;color:var(--muted)}
@@ -125,6 +128,7 @@ dialog::backdrop{background:rgba(0,0,0,.65)}
   <div class="spacer"></div>
   <div class="month" id="month">–</div>
   <div class="zoom"><button id="zOut" aria-label="Zoom out">−</button><span id="zVal">100%</span><button id="zIn" aria-label="Zoom in">+</button></div>
+  <select class="search" id="team" aria-label="Filter by Đội" hidden></select>
   <input class="search" id="q" type="search" placeholder="Search name or ID" aria-label="Search employees">
   <button class="icon-btn" id="reload" aria-label="Reload roster" title="Reload from Google Sheet">
     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"/></svg>
@@ -172,7 +176,7 @@ const WD = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
 const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
-const S = { url:'', gid:'', data:null, zoom:1, updated:new Set() };
+const S = { url:'', gid:'', data:null, zoom:1, updated:new Set(), team:'' };
 
 /* ---------- side menu ---------- */
 function menu(open){
@@ -195,6 +199,7 @@ function setZoom(z){
 $('zIn').onclick = () => setZoom(S.zoom + .1);
 $('zOut').onclick = () => setZoom(S.zoom - .1);
 $('q').oninput = () => render();
+$('team').onchange = () => { S.team = $('team').value; render(); };
 $('reload').onclick = () => load();
 
 /* ---------- loading ---------- */
@@ -243,9 +248,26 @@ function render(){
   $('month').textContent = first.getMonth() === last.getMonth() ? `${MONTHS[first.getMonth()]} ${first.getFullYear()}`
     : `${MON[first.getMonth()]} – ${MON[last.getMonth()]} ${last.getFullYear()}`;
 
-  // stats + legend
+  // filters: Đội + search
+  const hi = d.info_headers.findIndex(t => /(^|[^a-z])doi($|[^a-z])/.test(fold(t)));
+  const teamOf = e => hi >= 0 ? (e.info[hi] || '') : '';
+  const tsel = $('team');
+  if(hi >= 0){
+    const counts = {};
+    d.employees.forEach(e => { const t = teamOf(e) || '(blank)'; counts[t] = (counts[t]||0) + 1; });
+    if(S.team && !counts[S.team]) S.team = '';
+    tsel.innerHTML = `<option value="">${esc(d.info_headers[hi])}: all (${d.employees.length})</option>` +
+      Object.keys(counts).sort((a,b) => a.localeCompare(b,'vi')).map(t => `<option value="${esc(t)}" ${t===S.team?'selected':''}>${esc(t)} (${counts[t]})</option>`).join('');
+    tsel.hidden = false;
+  } else { tsel.hidden = true; S.team = ''; }
+  const q = fold($('q').value.trim());
+  const rows = d.employees.filter(e =>
+    (!S.team || (teamOf(e) || '(blank)') === S.team) &&
+    (!q || fold(e.name).includes(q) || fold(e.id).includes(q)));
+
+  // stats + legend (for the rows currently shown)
   let hCount = 0, redN = 0, hToday = 0; const codes = {};
-  d.employees.forEach(e => e.cells.forEach((v,i) => {
+  rows.forEach(e => e.cells.forEach((v,i) => {
     const k = kindOf(v, e.colors[i]); if(!k) return;
     if(k === 'h'){ hCount++; if(sameDay(dates[i], today)) hToday++; }
     if(k === 'nred') redN++;
@@ -253,7 +275,7 @@ function render(){
   }));
   const topCodes = Object.entries(codes).sort((a,b) => b[1]-a[1]).slice(0, 6);
   $('stats').innerHTML =
-    `<span><span class="dot" style="background:var(--green)"></span>Headcount <b>${d.employees.length}</b></span>` +
+    `<span><span class="dot" style="background:var(--green)"></span>Headcount <b>${rows.length}</b></span>` +
     `<span><span class="dot" style="background:var(--amber)"></span>Training days (H) <b>${hCount}</b></span>` +
     (dates.some(x => sameDay(x, today)) ? `<span>In training today <b>${hToday}</b></span>` : '') +
     `<span><span class="dot" style="background:var(--red)"></span>Guaranteed days off <b>${redN}</b></span>` +
@@ -261,33 +283,43 @@ function render(){
     topCodes.map(([c]) => `<span class="lg k-o" style="--h:${hue(c)}">${esc(c)}</span>`).join('') + `</span>`;
 
   // table
-  const q = fold($('q').value.trim());
-  const rows = d.employees.filter(e => !q || fold(e.name).includes(q) || fold(e.id).includes(q));
+  const isWe = dt => dt.getDay()===0 || dt.getDay()===6;
   let h = '<table><thead><tr><th class="name">EMPLOYEE</th>';
   dates.forEach(dt => {
-    const cls = [dt.getDay()===0||dt.getDay()===6 ? 'we':'', sameDay(dt,today) ? 'today':''].join(' ');
+    const cls = [isWe(dt) ? 'we':'', sameDay(dt,today) ? 'today':''].join(' ');
     h += `<th class="${cls}"><small>${WD[dt.getDay()]}</small>${dt.getDate()}-${MON[dt.getMonth()]}</th>`;
   });
   h += '</tr></thead><tbody>';
+  const sig = (v,c) => { const k = kindOf(v,c); return k ? v.trim().toUpperCase() + '|' + k : null; };
   rows.forEach((e, n) => {
     const initial = (e.name.trim()[0] || '?').toUpperCase();
+    const sub = e.info.filter(Boolean);
     h += `<tr><td class="name"><div class="who"><span class="idx">${n+1}</span><span class="av">${esc(initial)}</span>` +
-         `<span><b title="${esc(e.name)}">${esc(e.name)}</b><small><i>${esc(e.id)}</i>${e.info.length ? ' · ' + esc(e.info.join(' · ')) : ''}</small></span></div></td>`;
-    e.cells.forEach((v, i) => {
-      const dt = dates[i], k = kindOf(v, e.colors[i]);
-      const cls = ['day', dt.getDay()===0||dt.getDay()===6 ? 'we':'', sameDay(dt,today) ? 'today':''].join(' ');
-      let inner = '';
-      if(k){
-        const up = S.updated.has(e.row + ':' + d.cols[i]) ? ' upd' : '';
-        const style = k === 'o' ? ` style="--h:${hue(v.trim().toUpperCase())}"` : '';
-        inner = `<span class="chip k-${k}${up}"${style} title="${esc(e.name)} · ${dt.getDate()}/${dt.getMonth()+1} · ${esc(v)}">${esc(k === 'h' ? v.trim().slice(2) : v)}</span>`;
+         `<span><b title="${esc(e.name)}">${esc(e.name)}</b><small><i>${esc(e.id)}</i>${sub.length ? ' · ' + esc(sub.join(' · ')) : ''}</small></span></div></td>`;
+    const N = e.cells.length;
+    for(let i = 0; i < N; ){
+      const v = e.cells[i], k = kindOf(v, e.colors[i]), dt = dates[i];
+      if(!k){
+        h += `<td class="day ${isWe(dt) ? 'we':''} ${sameDay(dt,today) ? 'today':''}"></td>`; i++; continue;
       }
-      h += `<td class="${cls}">${inner}</td>`;
-    });
+      // merge consecutive days that carry the same value into one wide box
+      const key = sig(v, e.colors[i]);
+      let j = i + 1;
+      while(j < N && sig(e.cells[j], e.colors[j]) === key) j++;
+      const span = j - i, end = dates[j-1];
+      const hasToday = dates.slice(i, j).some(x => sameDay(x, today));
+      const up = e.cells.slice(i, j).some((_, x) => S.updated.has(e.row + ':' + d.cols[i+x])) ? ' upd' : '';
+      const style = k === 'o' ? ` style="--h:${hue(v.trim().toUpperCase())}"` : '';
+      const range = span > 1 ? `${dt.getDate()}/${dt.getMonth()+1} – ${end.getDate()}/${end.getMonth()+1} (${span} days)` : `${dt.getDate()}/${dt.getMonth()+1}`;
+      const label = k === 'h' ? v.trim().slice(2) : v;
+      h += `<td class="day ${span > 1 ? 'span':''} ${span === 1 && isWe(dt) ? 'we':''} ${hasToday ? 'today':''}" colspan="${span}">` +
+           `<span class="chip k-${k}${up}"${style} title="${esc(e.name)} · ${range} · ${esc(v)}">${esc(label)}</span></td>`;
+      i = j;
+    }
     h += '</tr>';
   });
   h += '</tbody></table>';
-  if(!rows.length) h += '<div class="msg">No employee matches your search.</div>';
+  if(!rows.length) h += '<div class="msg">No employee matches the current filter.</div>';
   $('wrap').innerHTML = h;
 }
 
