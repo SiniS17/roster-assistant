@@ -19,9 +19,9 @@ import os as _os
 
 DISTRIBUTION_SHEET_URLS = [
     "https://docs.google.com/spreadsheets/d/19hN9w1IPFLZFtsdqY9oEeAaCC-kKtlS_/edit?gid=865448519#gid=865448519",
-    # "https://docs.google.com/spreadsheets/d/....../edit",
-    # "https://docs.google.com/spreadsheets/d/....../edit",
-    # "https://docs.google.com/spreadsheets/d/....../edit",
+    "https://docs.google.com/spreadsheets/d/1pZghDD0IWpGD_9HlUCRDUqVlmpNphHX8/edit?gid=2076737416#gid=2076737416",
+    "https://docs.google.com/spreadsheets/d/1p0I3AFlr3M_OsLO670irspKNVIs_8jnJ/edit?gid=1860011037#gid=1860011037",
+    "https://docs.google.com/spreadsheets/d/1K76RvCgyKwoXcBYZL4lgx4Hk_nhB6WnF/edit?gid=517121129#gid=517121129",
 ]
 _env_urls = _os.environ.get("DISTRIBUTION_SHEET_URLS", "").strip()
 if _env_urls:
