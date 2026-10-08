@@ -138,6 +138,59 @@ dialog::backdrop{background:rgba(0,0,0,.65)}
 .pill b{font-variant-numeric:tabular-nums}
 .log{max-height:240px;overflow:auto;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--log-bg);font:12px/1.55 Consolas,monospace;white-space:pre-wrap;word-break:break-word}
 .err{margin-top:14px;padding:10px 12px;border:1px solid rgba(239,83,80,.4);border-radius:8px;background:rgba(239,83,80,.1);color:var(--err-text);white-space:pre-wrap;word-break:break-word}
+
+/* Daily Distribution view */
+body[data-view="dist"] .zoom, body[data-view="dist"] #team, body[data-view="dist"] #q, body[data-view="dist"] #month, body[data-view="dist"] #note{display:none!important}
+.daystrip{display:flex;gap:6px;overflow-x:auto;width:100%;scrollbar-width:thin;padding:1px 0}
+.dbtn{flex:none;min-width:62px;padding:5px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);color:var(--muted);text-align:center;line-height:1.25}
+.dbtn small{display:block;font-size:10px;letter-spacing:.08em;font-weight:600}
+.dbtn b{color:var(--text);font-weight:600;font-variant-numeric:tabular-nums}
+.dbtn:hover{border-color:var(--line2)}
+.dbtn.on{border-color:var(--green);box-shadow:inset 0 -2px var(--green);background:var(--panel)}
+.dbtn.today small{color:var(--green)}
+.dist{max-width:1320px;margin:0 auto;padding:22px 20px 44px}
+.dist-head{display:flex;flex-wrap:wrap;gap:18px;justify-content:space-between;align-items:flex-start;margin-bottom:22px}
+.dist-date{margin:0;font-size:34px;line-height:1.1;font-weight:800;letter-spacing:-.01em}
+.dist-meta{margin-top:8px;color:var(--muted);font-size:12px;letter-spacing:.05em}
+.dist-meta b{color:var(--text);font:600 12px Consolas,monospace}
+.dist-meta i{font-style:normal;margin:0 9px;opacity:.5}
+.crew{display:grid;grid-template-columns:repeat(4,minmax(128px,1fr));border:1px solid var(--line);border-radius:10px;background:var(--panel);overflow:hidden}
+.crew>div{padding:9px 14px;border-left:1px solid var(--line);min-width:0}
+.crew>div:first-child{border-left:0}
+.crew small{display:block;color:var(--muted);font-size:10px;letter-spacing:.08em;font-weight:600;white-space:nowrap}
+.crew b{display:block;margin-top:4px;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.crew span{display:block;margin-top:2px;color:var(--muted);font:11px Consolas,monospace}
+.dist-cols{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:20px;align-items:start}
+.dist-col{display:flex;flex-direction:column;gap:16px;min-width:0}
+.dcard{border:1px solid var(--line);border-radius:10px;background:var(--panel);overflow:hidden}
+.dcard>header{display:flex;align-items:center;gap:8px;padding:9px 14px;font-weight:700;font-size:12px;letter-spacing:.06em;border-bottom:1px solid var(--line)}
+.dcard.zone>header{background:rgba(25,195,125,.10);color:var(--green)}
+.dcard.shift>header{background:rgba(240,167,58,.12);color:var(--amber)}
+.dcard.shop>header{background:var(--panel2);color:var(--text)}
+.dcard .tag{margin-left:auto;padding:2px 8px;border:1px solid var(--line2);border-radius:5px;color:var(--muted);font-size:10px;letter-spacing:.06em}
+.dcard .empty{padding:22px 14px;text-align:center;color:var(--muted);font-size:12px}
+.dcard .empty svg{display:block;margin:0 auto 8px;opacity:.5}
+.tscroll{overflow-x:auto}
+table.dt{width:100%;min-width:600px;table-layout:fixed;font-size:12.5px}
+.dt th,.dt td{padding:8px 10px;border:0;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dt th:first-child,.dt td:first-child{padding-left:14px}
+.dt th:last-child,.dt td:last-child{padding-right:14px}
+.dt th{font-size:10px;letter-spacing:.08em;color:var(--muted);font-weight:600;padding-top:9px;padding-bottom:5px}
+.dt td{border-top:1px solid var(--grid)}
+.dt td.o,.dt th.o{color:var(--idx);font-variant-numeric:tabular-nums}
+.dt td.nm{font-weight:600;white-space:normal}
+.dt td.id,.dt td.ph{font:12px Consolas,monospace;color:var(--muted)}
+.dt td.rm{white-space:normal;text-overflow:clip}
+.dt tbody tr:hover td{background-color:var(--hover)}
+.pos{display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom;padding:1px 7px;border-radius:5px;background:var(--panel2);border:1px solid var(--line2);font-size:11px;font-weight:600}
+.rchip{display:inline-block;max-width:100%;box-sizing:border-box;padding:2px 9px;border-radius:5px;border:1px solid var(--line2);background:var(--panel2);font-size:11px;font-weight:600;text-transform:uppercase}
+.rchip.lead{color:var(--blue);border-color:rgba(76,141,255,.45);background:rgba(76,141,255,.12)}
+.rtxt{font-size:11px;font-weight:600;text-transform:uppercase;color:var(--muted)}
+.rtxt.red{color:var(--nred)}
+.dim{color:var(--idx)}
+.dist-warn{margin-top:18px;color:var(--muted);font-size:11.5px}
+@media (max-width:980px){.dist-cols{grid-template-columns:minmax(0,1fr)}}
+@media (max-width:640px){.crew{grid-template-columns:repeat(2,minmax(0,1fr))}.crew>div:nth-child(3){border-left:0}.crew>div:nth-child(n+3){border-top:1px solid var(--line)}.dist-date{font-size:26px}.dist{padding:16px 12px 36px}}
 :root[data-theme="dark"] .i-moon,:root:not([data-theme="dark"]) .i-sun{display:none}
 @media (max-width:760px){.search{width:120px}.legend{display:none}.month{display:none}.brand small{display:none}}
 </style>
@@ -173,6 +226,7 @@ dialog::backdrop{background:rgba(0,0,0,.65)}
   <header><div class="logo">R</div><div class="brand">Roster Assistant<small>Menu</small></div></header>
   <nav class="nav">
     <button class="on" id="navRoster">Roster</button>
+    <button id="navDist">Daily Distribution</button>
     <button id="navKhdt">KHDT → Roster</button>
     <hr>
     <a id="navSheet" href="#" target="_blank" rel="noopener">Open Google Sheet</a>
@@ -207,7 +261,7 @@ const WD = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
 const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
-const S = { url:'', gid:'', data:null, zoom:1, updated:new Set(), team:'' };
+const S = { url:'', gid:'', data:null, zoom:1, updated:new Set(), team:'', view:'roster' };
 
 /* ---------- theme ---------- */
 function syncThemeBtn(){
@@ -231,8 +285,9 @@ function menu(open){
 $('menuBtn').onclick = () => menu(!$('drawer').classList.contains('on'));
 $('scrim').onclick = () => menu(false);
 document.addEventListener('keydown', e => { if(e.key === 'Escape') menu(false); });
-$('navRoster').onclick = () => menu(false);
-$('navKhdt').onclick = () => { menu(false); $('url').value = S.url || DEFAULT_URL; $('khdt').showModal(); };
+$('navRoster').onclick = () => { menu(false); if(S.view !== 'roster') setView('roster'); };
+$('navDist').onclick = () => { menu(false); if(S.view !== 'dist') setView('dist'); };
+$('navKhdt').onclick = () => { menu(false); if(S.view !== 'roster') setView('roster'); $('url').value = S.url || DEFAULT_URL; $('khdt').showModal(); };
 $('closeDlg').onclick = () => $('khdt').close();
 
 /* ---------- zoom / search ---------- */
@@ -245,7 +300,7 @@ $('zIn').onclick = () => setZoom(S.zoom + .1);
 $('zOut').onclick = () => setZoom(S.zoom - .1);
 $('q').oninput = () => render();
 $('team').onchange = () => { S.team = $('team').value; render(); };
-$('reload').onclick = () => load();
+$('reload').onclick = () => S.view === 'dist' ? loadDist(true) : load();
 
 /* ---------- loading ---------- */
 async function load(){
@@ -384,6 +439,169 @@ function render(){
   $('wrap').innerHTML = h;
 }
 
+/* ---------- view switch ---------- */
+function setView(v){
+  S.view = v; document.body.dataset.view = v;
+  $('navRoster').classList.toggle('on', v === 'roster');
+  $('navDist').classList.toggle('on', v === 'dist');
+  try{ history.replaceState(null, '', v === 'dist' ? '#distribution' : location.pathname + location.search); }catch(e){}
+  $('tabs').innerHTML = ''; $('stats').innerHTML = ''; $('note').hidden = true;
+  $('sub').textContent = v === 'dist' ? 'VAECO · Daily Distribution' : 'VAECO';
+  if(v === 'dist') loadDist(); else { $('navSheet').href = S.data ? S.data.sheet_url : '#'; load(); }
+}
+
+/* ---------- Daily Distribution ---------- */
+const DIST = { meta:null, sheet:0, tab:null, days:new Map(), req:0 };
+const SHOPS = ['STRUCTURE SHEET METAL','STRUCTURE COMPOSITE','STRUCTURE PAINTING','CABIN'];
+const CREW = [['foreman','FOREMAN'],['truc_doi','TRỰC ĐỘI'],['dock_planner','DOCK PLANNER'],['shift_tech','SHIFT / TECH SUPP']];
+const MON_UP = MON.map(m => m.toUpperCase());
+const pad2 = n => String(n).padStart(2, '0');
+const isoDate = iso => { const [y,m,d] = iso.split('-').map(Number); return new Date(y, m-1, d); };
+const todayIso = () => { const t = new Date(); return `${t.getFullYear()}-${pad2(t.getMonth()+1)}-${pad2(t.getDate())}`; };
+function fmtHeading(iso){ const d = isoDate(iso); return `${pad2(d.getDate())} ${MON_UP[d.getMonth()]} ${d.getFullYear()}`; }
+function fmtRange(a, b){
+  if(!a) return '';
+  const d1 = isoDate(a), d2 = isoDate(b || a);
+  if(d1.getTime() === d2.getTime()) return fmtHeading(a);
+  if(d1.getFullYear() !== d2.getFullYear()) return `${fmtHeading(a)} - ${fmtHeading(b)}`;
+  if(d1.getMonth() === d2.getMonth()) return `${pad2(d1.getDate())}-${pad2(d2.getDate())} ${MON_UP[d1.getMonth()]} ${d1.getFullYear()}`;
+  return `${pad2(d1.getDate())} ${MON_UP[d1.getMonth()]} - ${pad2(d2.getDate())} ${MON_UP[d2.getMonth()]} ${d1.getFullYear()}`;
+}
+const IC = {
+  pin:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-6.2 7-12a7 7 0 1 0-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.5"/></svg>',
+  sun:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>',
+  moon:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>',
+  tool:'<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z"/></svg>',
+  users:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 20c.6-3.6 3.2-5.5 6.5-5.5s5.9 1.9 6.5 5.5"/><circle cx="17" cy="9" r="2.5"/><path d="M17.5 14.6c2.3.3 3.7 1.9 4 4.4"/></svg>'
+};
+
+async function loadDist(force){
+  const my = ++DIST.req;
+  $('wrap').innerHTML = '<div class="msg">Loading distribution…</div>';
+  $('stats').innerHTML = ''; $('tabs').innerHTML = '';
+  try{
+    const r = await fetch('/api/distribution' + (force ? '?refresh=1' : ''));
+    const j = await r.json();
+    if(!j.ok) throw new Error(j.error || 'Unknown error');
+    if(my !== DIST.req) return;
+    DIST.meta = j.sheets; if(force) DIST.days.clear();
+    if(!j.sheets.length){
+      $('wrap').innerHTML = '<div class="msg"><div><b>No spreadsheets configured yet</b><p>Add the Google Sheet links to <code>DISTRIBUTION_SHEET_URLS</code> in config.py (or set the DISTRIBUTION_SHEET_URLS environment variable), share each one with the service account as Viewer, then reload.</p></div></div>';
+      return;
+    }
+    if(!DIST.init){
+      DIST.init = true; let saved = NaN; try{ saved = parseInt(localStorage.getItem('distSheet'), 10); }catch(e){}
+      DIST.sheet = saved >= 0 && saved < j.sheets.length ? saved : 0;
+    } else if(DIST.sheet >= j.sheets.length) DIST.sheet = 0;
+    pickDefaultDay();
+    renderDist();
+  }catch(e){
+    if(my !== DIST.req) return;
+    $('wrap').innerHTML = '<div class="msg"><div><b>Couldn’t load the distribution</b><code>' + esc(e.message) + '</code>' +
+      '<button class="btn" style="margin-top:12px" onclick="loadDist(true)">Try again</button></div></div>';
+  }
+}
+
+function pickDefaultDay(){
+  const sh = DIST.meta[DIST.sheet]; DIST.tab = null;
+  if(!sh || !sh.days.length) return;
+  const t = isoDate(todayIso()).getTime();
+  let best = sh.days[0], bd = Infinity;
+  sh.days.forEach(d => { const diff = Math.abs(isoDate(d.date).getTime() - t); if(diff < bd){ bd = diff; best = d; } });
+  DIST.tab = best.tab;
+}
+
+function renderDist(){
+  const sh = DIST.meta[DIST.sheet];
+  $('tabs').innerHTML = DIST.meta.map((s, i) =>
+    `<button class="tab ${i === DIST.sheet ? 'on' : ''}" data-i="${i}" title="${esc(s.title || '')}">${esc(s.ac)}${s.error ? '<span class="badge" title="Could not read this spreadsheet">!</span>' : ''}</button>`).join('');
+  $('tabs').querySelectorAll('.tab').forEach(b => b.onclick = () => {
+    DIST.sheet = +b.dataset.i;
+    try{ localStorage.setItem('distSheet', DIST.sheet); }catch(e){}
+    pickDefaultDay(); renderDist();
+  });
+  if(sh && sh.url) $('navSheet').href = sh.url;
+
+  if(sh.error){
+    $('stats').innerHTML = '';
+    $('wrap').innerHTML = '<div class="msg"><div><b>Couldn’t read ' + esc(sh.ac) + '</b><code>' + esc(sh.error) + '</code>' +
+      '<p>Check the link and that the spreadsheet is shared with the service account (Viewer is enough).</p>' +
+      '<button class="btn" onclick="loadDist(true)">Try again</button></div></div>';
+    return;
+  }
+  const today = todayIso();
+  $('stats').innerHTML = sh.days.length
+    ? '<div class="daystrip">' + sh.days.map(d => { const dt = isoDate(d.date);
+        return `<button class="dbtn ${d.tab === DIST.tab ? 'on' : ''} ${d.date === today ? 'today' : ''}" data-tab="${esc(d.tab)}" title="${esc(d.tab)}"><small>${WD[dt.getDay()]}${d.date === today ? ' · TODAY' : ''}</small><b>${pad2(dt.getDate())} ${MON_UP[dt.getMonth()]}</b></button>`; }).join('') + '</div>'
+    : '<span>No day tabs found in this spreadsheet.</span>';
+  $('stats').querySelectorAll('.dbtn').forEach(b => b.onclick = () => { DIST.tab = b.dataset.tab; renderDist(); });
+  const active = $('stats').querySelector('.dbtn.on'); if(active) active.scrollIntoView({inline:'center', block:'nearest'});
+
+  if(!DIST.tab){
+    $('wrap').innerHTML = '<div class="msg"><div><b>No day tabs</b><p>Name each day’s tab like <code>' + esc(sh.ac) + '-SEP21</code> (A/C, month, day).</p></div></div>';
+    return;
+  }
+  loadDay(sh);
+}
+
+async function loadDay(sh, force){
+  const my = ++DIST.req, key = DIST.sheet + '|' + DIST.tab;
+  if(!force && DIST.days.has(key)){ paintDay(sh, DIST.days.get(key)); return; }
+  $('wrap').innerHTML = '<div class="msg">Loading ' + esc(DIST.tab) + '…</div>';
+  try{
+    const r = await fetch('/api/distribution/day?sheet=' + DIST.sheet + '&tab=' + encodeURIComponent(DIST.tab));
+    const j = await r.json();
+    if(!j.ok) throw new Error(j.error || 'Unknown error');
+    DIST.days.set(key, j);
+    if(my === DIST.req) paintDay(sh, j);
+  }catch(e){
+    if(my !== DIST.req) return;
+    $('wrap').innerHTML = '<div class="msg"><div><b>Couldn’t read tab ' + esc(DIST.tab) + '</b><code>' + esc(e.message) + '</code></div></div>';
+  }
+}
+
+function remarkHtml(p){
+  const t = p.remark; if(!t) return '<span class="dim">-</span>';
+  if(/leader/i.test(t)) return `<span class="rchip ${/gsgt/i.test(t) ? 'lead' : ''}">${esc(t)}</span>`;
+  return `<span class="rtxt ${p.red ? 'red' : ''}">${esc(t)}</span>`;
+}
+function peopleTable(people){
+  return '<div class="tscroll"><table class="dt"><colgroup><col style="width:52px"><col><col style="width:84px"><col style="width:126px"><col style="width:98px"><col></colgroup><tr><th class="o">ORD</th><th>NAME AND SURNAME</th><th>ID</th><th>POS</th><th>PHONE</th><th>REMARK</th></tr>' +
+    people.map(p => `<tr><td class="o">${p.ord}</td><td class="nm">${esc(p.name)}</td><td class="id">${esc(p.id)}</td>` +
+      `<td>${p.pos ? `<span class="pos" title="${esc(p.pos)}">${esc(p.pos)}</span>` : '<span class="dim">–</span>'}</td>` +
+      `<td class="ph">${esc(p.phone) || '<span class="dim">–</span>'}</td><td class="rm">${remarkHtml(p)}</td></tr>`).join('') + '</table></div>';
+}
+
+function paintDay(sh, day){
+  const zones = day.sections.filter(s => s.kind === 'zone');
+  const others = day.sections.filter(s => s.kind !== 'zone');
+  const zoneHtml = zones.map(z => {
+    const h = z.time ? parseInt(z.time, 10) : null;
+    const cls = z.time ? 'shift' : 'zone', ico = z.time ? (h >= 20 || h < 5 ? IC.moon : IC.sun) : IC.pin;
+    return `<section class="dcard ${cls}"><header>${ico}<span>${esc(z.title)}</span></header>` +
+      (z.people.length ? peopleTable(z.people) : `<div class="empty">No personnel assigned.</div>`) + '</section>';
+  }).join('') || '<section class="dcard"><div class="empty">No zones found on this tab.</div></section>';
+
+  const used = new Set();
+  const shop = (title, sec) => {
+    if(sec) used.add(sec);
+    return `<section class="dcard shop"><header>${IC.tool}<span>${esc(title)}</span><span class="tag">${sec && sec.people.length ? sec.people.length + ' ASSIGNED' : 'UNASSIGNED'}</span></header>` +
+      (sec && sec.people.length ? peopleTable(sec.people) : `<div class="empty">${IC.users}No personnel assigned for this shift.</div>`) + '</section>';
+  };
+  let shopHtml = SHOPS.map(t => shop(t, others.find(o => fold(o.title) === fold(t)))).join('');
+  shopHtml += others.filter(o => !used.has(o) && o.people.length).map(o => shop(o.title, o)).join('');
+
+  const crew = CREW.map(([k, label]) => { const p = (sh.people || {})[k];
+    return `<div><small>${label}</small><b title="${p ? esc(p.name) : ''}">${p ? esc(p.name) : '–'}</b><span>${p && p.phone ? esc(p.phone) : '–'}</span></div>`; }).join('');
+  const range = sh.date_from ? fmtRange(sh.date_from, sh.date_to) : (sh.date_text || '–');
+  const warn = (sh.warnings || []).length ? `<div class="dist-warn">⚠ ${sh.warnings.map(esc).join(' · ')}</div>` : '';
+
+  $('wrap').innerHTML = `<div class="dist"><div class="dist-head"><div><h1 class="dist-date">${fmtHeading(day.date)}</h1>` +
+    `<div class="dist-meta">A/C: <b>${esc(sh.ac || '–')}</b><i>•</i>CHECK: <b>${esc(sh.check || '–')}</b><i>•</i>DATE: <b>${esc(range)}</b></div></div>` +
+    `<div class="crew">${crew}</div></div>` +
+    `<div class="dist-cols"><div class="dist-col">${zoneHtml}</div><div class="dist-col">${shopHtml}</div></div>${warn}</div>`;
+}
+
 /* ---------- KHDT run ---------- */
 $('khdtForm').onsubmit = async ev => {
   ev.preventDefault();
@@ -416,7 +634,7 @@ $('khdtForm').onsubmit = async ev => {
   }
 };
 
-load();
+setView(location.hash === '#distribution' ? 'dist' : 'roster');
 </script>
 </body>
 </html>

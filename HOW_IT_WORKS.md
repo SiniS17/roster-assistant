@@ -93,6 +93,43 @@ it with a colleague. See **Setup**, below.
 
 Nothing is ever written to KHDT — it's read-only input.
 
+## Daily Distribution page (read-only)
+
+Side menu → **Daily Distribution** (or open `/#distribution`). It reads several
+other Google spreadsheets - one per aircraft/check - and shows who goes to
+which zone on a chosen day. It never writes to them.
+
+**Each spreadsheet is expected to look like this**
+- **1st sheet** - general info. Found by label, so exact cells don't matter:
+  `A/C`, `CHECK`, `DATE` (e.g. `21-29 SEP 2026`, or two date cells),
+  `FOREMAN`, `TRỰC ĐỘI`, `DOCK PLANNER`, `SHIFT / TECH SUPP` (name, then phone
+  next to it or below it), plus any rows that hold an employee ID and a phone
+  number - that is the phone book used for the PHONE column.
+- **Every other sheet** - one day, named `<A/C>-<MMM><DD>` (e.g. `B218-SEP21`).
+  It holds `ORD / NAME AND SURNAME / ID / POSITION / REMARK` tables split by
+  section rows (`ZONE 128`, `ZONE 128 @16H00`, `ZONE AVI`, `STRUCTURE PAINTING`...).
+  `ZONE ...` sections fill the left column (`@16H00`-style ones get a sun/moon
+  icon); the right column always lists Structure Sheet Metal / Composite /
+  Painting and Cabin, showing "No personnel assigned" until a section with that
+  name has people. A red REMARK in the sheet stays red on the page.
+- Sheets that don't match the name pattern (notes, templates) are ignored.
+
+**Setup**
+1. Ask each owner to share their spreadsheet with the service-account email as
+   **Viewer** (the same bot email already used for the Roster; it only needs
+   view access here - the page asks Google for read-only scopes).
+2. Put the links in `DISTRIBUTION_SHEET_URLS` in `config.py` (one per line, as
+   many as you need), or set the `DISTRIBUTION_SHEET_URLS` environment variable
+   (one URL per line or comma-separated) - the variable wins if both are set.
+3. Enable the **Google Drive API** in the same Google Cloud project *only if*
+   some of those files are uploaded `.xlsx` files that were opened in Google
+   Sheets (the Sheets API can't read those; the page then downloads them
+   through Drive instead). Native Google Sheets need nothing extra.
+
+A spreadsheet that can't be read shows a `!` on its tab with the reason; the
+others keep working. Data is cached for `DISTRIBUTION_CACHE_SECONDS` (60 s);
+the reload button always fetches fresh data.
+
 ## Setup (Google Sheets access)
 
 1. In Google Cloud Console, create (or reuse) a project, enable the
@@ -133,9 +170,10 @@ Edit `config.py`:
 
 | File | Purpose |
 |---|---|
-| `app.py` | Flask routes: upload form, `/run` processing + results page |
+| `app.py` | Flask routes: roster page, `/run`, `/api/roster`, `/api/distribution*` |
 | `engine.py` | All KHDT-parsing and Roster-matching/marking logic |
 | `sheets_client.py` | Google Sheets read/write (service-account auth) |
+| `distribution.py` | Daily Distribution: reads the other spreadsheets, parses info + day tabs |
 | `log_workbook.py` | Builds the downloadable `.xlsx` run log |
 | `config.py` | Abbreviations, log labels, default Sheet URL |
 | `templates/`, `static/` | Upload form + results page |

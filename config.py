@@ -8,6 +8,29 @@ DEFAULT_ROSTER_SHEET_URL = (
     "https://docs.google.com/spreadsheets/d/16cIg2Ufh3FO8Qt6KC7WGzP9NcppfiRziCtsHigVt-T4/edit?hl=vi&pli=1&gid=0#gid=0"
 )
 
+# ------------------------------------------------------------
+# Daily Distribution page: the spreadsheets it reads (view-only).
+# Share each one with the service-account email as *Viewer*.
+# Add as many as you need - one line per spreadsheet. You can also set the
+# DISTRIBUTION_SHEET_URLS environment variable (one URL per line, or comma
+# separated); when set, it replaces this list.
+# ------------------------------------------------------------
+import os as _os
+
+DISTRIBUTION_SHEET_URLS = [
+    "https://docs.google.com/spreadsheets/d/19hN9w1IPFLZFtsdqY9oEeAaCC-kKtlS_/edit?gid=865448519#gid=865448519",
+    # "https://docs.google.com/spreadsheets/d/....../edit",
+    # "https://docs.google.com/spreadsheets/d/....../edit",
+    # "https://docs.google.com/spreadsheets/d/....../edit",
+]
+_env_urls = _os.environ.get("DISTRIBUTION_SHEET_URLS", "").strip()
+if _env_urls:
+    DISTRIBUTION_SHEET_URLS = [u.strip() for u in _env_urls.replace(",", "\n").splitlines() if u.strip()]
+
+# How long (seconds) fetched sheet data is reused before asking Google again.
+# The page's reload button always bypasses this.
+DISTRIBUTION_CACHE_SECONDS = 60
+
 # Prefix written in front of every course marker.
 MARKER_PREFIX = "H"
 
