@@ -601,10 +601,17 @@ function paintDay(sh, day){
   let shopHtml = SHOPS.map(t => shop(t, others.find(o => fold(o.title) === fold(t)))).join('');
   shopHtml += others.filter(o => !used.has(o) && o.people.length).map(o => shop(o.title, o)).join('');
 
-  const crew = CREW.map(([k, label]) => { const p = (sh.people || {})[k];
-    return `<div><small>${label}</small><b title="${p ? esc(p.name) : ''}">${p ? esc(p.name) : '–'}</b><span>${p && p.phone ? esc(p.phone) : '–'}</span></div>`; }).join('');
+  // Trực đội / Foreman / Dock planner = people whose ROSTER cell for this day has TĐ / FM / PPC
+  // (config.CREW_ROSTER_CODES); Shift / Tech supp is still the label on the squad's 1st sheet.
+  const crew = CREW.map(([k, label]) => {
+    const list = k === 'shift_tech' ? ((sh.people || {})[k] ? [sh.people[k]] : []) : ((day.crew || {})[k] || []);
+    const body = list.length
+      ? list.map(p => `<b title="${esc(p.name)}">${esc(p.name)}</b><span>${p.phone ? esc(p.phone) : '–'}</span>`).join('')
+      : '<b>–</b><span>–</span>';
+    return `<div><small>${label}</small>${body}</div>`; }).join('');
   const range = sh.date_from ? fmtRange(sh.date_from, sh.date_to) : (sh.date_text || '–');
-  const warn = (sh.warnings || []).length ? `<div class="dist-warn">⚠ ${sh.warnings.map(esc).join(' · ')}</div>` : '';
+  const warns = [...(sh.warnings || []), ...(day.warning ? [day.warning] : [])];
+  const warn = warns.length ? `<div class="dist-warn">⚠ ${warns.map(esc).join(' · ')}</div>` : '';
 
   $('wrap').innerHTML = `<div class="dist"><div class="dist-head"><div><h1 class="dist-date">${fmtHeading(day.date)}</h1>` +
     `<div class="dist-meta">A/C: <b>${esc(sh.ac || '–')}</b><i>•</i>CHECK: <b>${esc(sh.check || '–')}</b><i>•</i>DATE: <b>${esc(range)}</b></div></div>` +

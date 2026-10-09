@@ -35,6 +35,22 @@ if _env_urls:
 # ignoring accents, case and extra spaces, so "TĂNG CƯỜNG" also matches).
 SQUAD_MEMBER_STOP_LABEL = "tăng cường"
 
+# ------------------------------------------------------------
+# Daily Distribution crew (the strip above the zones). It is NOT typed on the
+# Daily Distribution page: for the chosen day, anyone in that squad whose
+# ROSTER cell for that day contains the code holds the role. The code is
+# matched as its own word, ignoring accents and case (so "TĐ" also matches "td"
+# and "TĐ - ATHK", but not "FMX"). Several people can hold one role.
+#   key = role (do not rename the keys), value = the roster code.
+# "Shift / Tech supp" is not in this list: it still comes from the label on the
+# squad's 1st sheet.
+# ------------------------------------------------------------
+CREW_ROSTER_CODES = {
+    "truc_doi": "TĐ",        # Trực đội  = anyone with TĐ in the roster that day
+    "foreman": "FM",         # Foreman   = anyone with FM in the roster that day
+    "dock_planner": "PPC",   # Dock planner = anyone with PPC in the roster that day
+}
+
 # How long (seconds) fetched sheet data is reused before asking Google again.
 # The page's reload button always bypasses this.
 DISTRIBUTION_CACHE_SECONDS = 60

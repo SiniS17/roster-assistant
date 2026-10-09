@@ -26,10 +26,20 @@ Everything is found by searching for labels (ID / NAME / ORD), not by fixed
 cell addresses, in the same spirit as distribution.py.
 """
 
+import re
 from concurrent.futures import ThreadPoolExecutor
 
-from config import SQUAD_MEMBER_STOP_LABEL
-from distribution import _ORD_LABELS, _find_headers, configured_squads, first_sheet_grid, fold, text
+from config import CREW_ROSTER_CODES, SQUAD_MEMBER_STOP_LABEL
+from distribution import (
+    _ORD_LABELS,
+    _find_headers,
+    _first_sheet_values,
+    configured_squads,
+    first_sheet_grid,
+    fold,
+    parse_info,
+    text,
+)
 from engine import find_roster_header_grid, normalize_id, normalize_name
 from roster_view import build_roster_payload
 
@@ -214,3 +224,45 @@ def build_squads_payload(force=False):
         "conflicts": conflicts,
         "notes": notes,
     }
+
+
+# ------------------------------------------------------- Daily Distribution crew
+def cell_has_code(cell, code):
+    """True when `code` ('TĐ', 'FM', 'PPC') is a word of the roster cell, ignoring accents and case."""
+    return fold(code) in re.split(r"[^a-z0-9]+", fold(cell))
+
+
+def crew_from_payload(payload, squad, iso_date, phones=None):
+    """
+    {role: [{'name', 'id', 'phone'}, ...]} for one day: the people of `squad` whose roster cell on `iso_date`
+    contains the role's code (CREW_ROSTER_CODES in config.py). Phones come from the squad's phone book.
+    """
+    phones = phones or {}
+    crew = {role: [] for role in CREW_ROSTER_CODES}
+    if iso_date not in payload["dates"]:
+        return crew
+    i = payload["dates"].index(iso_date)
+    for e in payload["employees"]:
+        if e["squad"] != squad:
+            continue
+        cell = e["cells"][i]
+        if not cell:
+            continue
+        for role, code in CREW_ROSTER_CODES.items():
+            if cell_has_code(cell, code):
+                crew[role].append({"name": e["name"], "id": e["id"], "phone": phones.get(e["id"], "")})
+    return crew
+
+
+def crew_for_day(index, iso_date, force=False):
+    """Crew of squad number `index` (0-based) on `iso_date`: {'crew': {...}, 'warning': str | None}."""
+    squad = configured_squads()[index][0]
+    payload = build_squads_payload(force)
+    _, phones, _ = parse_info(_first_sheet_values(index, force))
+    crew = crew_from_payload(payload, squad, iso_date, phones)
+    warning = None
+    if iso_date not in payload["dates"]:
+        warning = f"{iso_date} is not a day on the roster (1st sheets), so Trực đội / Foreman / Dock planner can't be filled."
+    elif not any(e["squad"] == squad for e in payload["employees"]):
+        warning = f"No members of {squad} were found on its 1st sheet, so Trực đội / Foreman / Dock planner can't be filled."
+    return {"crew": crew, "warning": warning}

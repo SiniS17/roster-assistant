@@ -31,7 +31,7 @@ from engine import load_khdt, mark_roster_grid
 from log_workbook import write_log_workbook
 from roster_view import build_roster_payload, diff_main_temp, find_tab, list_tabs, rebuild_temp, tab_url
 from sheets_client import parse_sheet_url, read_roster_grid, write_roster_updates
-from squads import build_squads_payload
+from squads import build_squads_payload, crew_for_day
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-change-me")
@@ -111,10 +111,17 @@ def api_distribution_day():
     tab = (request.args.get("tab") or "").strip()
     if not sheet.isdigit() or not tab:
         return jsonify(ok=False, error="Missing 'sheet' (number) or 'tab'."), 400
+    force = request.args.get("refresh") == "1"
     try:
-        day = build_day(int(sheet), tab, force=request.args.get("refresh") == "1")
+        day = build_day(int(sheet), tab, force=force)
     except Exception as e:
         return jsonify(ok=False, error=f"{type(e).__name__}: {e}"), 400
+    # Trực đội / Foreman / Dock planner come from the roster (config.CREW_ROSTER_CODES); a roster
+    # problem must not hide the zones, so it is reported next to the crew instead.
+    try:
+        day.update(crew_for_day(int(sheet), day["date"], force=force))
+    except Exception as e:
+        day.update(crew=None, warning=f"Couldn't read the roster for the crew: {type(e).__name__}: {e}")
     return jsonify(ok=True, **day)
 
 

@@ -126,6 +126,13 @@ Side menu → **Daily Distribution** (or open `/#distribution`). It reads the
 same squad spreadsheets - tabs are labelled `Squad 1 · <A/C>`... - and shows who goes to
 which zone on a chosen day. It never writes to them.
 
+**The crew strip comes from the roster.** For the chosen day, anyone in that
+squad whose roster cell for that day contains **`TĐ`** is *Trực đội*, **`FM`** is
+*Foreman*, and **`PPC`** is *Dock planner* (the code is matched as its own word,
+ignoring accents/case; several people can hold one role; phones come from the
+squad's phone book). The codes live in `CREW_ROSTER_CODES` in `config.py`.
+*Shift / Tech supp* is still the label on the squad's 1st sheet.
+
 **Each spreadsheet is expected to look like this**
 - **1st sheet** - general info. Found by label, so exact cells don't matter:
   `A/C`, `CHECK`, `DATE` (e.g. `21-29 SEP 2026`, or two date cells),
@@ -195,6 +202,8 @@ Edit `config.py`:
   priority order (see "Roster page" above).
 - `SQUAD_MEMBER_STOP_LABEL` — the text that ends a squad's member list
   (`tăng cường`).
+- `CREW_ROSTER_CODES` — roster codes that make someone Trực đội (`TĐ`), Foreman
+  (`FM`) or Dock planner (`PPC`) on the Daily Distribution page.
 - `COURSE_ABBREVIATIONS` / `COURSE_NAME_ABBREVIATIONS` — marker shorthand.
 - `MARKER_PREFIX` — defaults to `H`.
 - `LOG_COLUMN_HEADERS` / `LOG_EVENT_LABELS` — labels used in the log file.

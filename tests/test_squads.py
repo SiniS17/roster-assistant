@@ -180,5 +180,56 @@ class BuildPayload(unittest.TestCase):
         self.assertTrue(any("no day columns" in n for n in p["notes"]))
 
 
+class Crew(unittest.TestCase):
+    PAYLOAD = {
+        "dates": ["2026-10-01", "2026-10-02"],
+        "employees": [
+            {"squad": "Squad 1", "id": "VAE001", "name": "An", "cells": ["FM", "N"]},
+            {"squad": "Squad 1", "id": "VAE002", "name": "Binh", "cells": ["tđ", "FM"]},
+            {"squad": "Squad 1", "id": "VAE003", "name": "Chi", "cells": ["PPC", "H ATHK"]},
+            {"squad": "Squad 1", "id": "VAE004", "name": "Dung", "cells": ["FMX", "N"]},
+            {"squad": "Squad 2", "id": "VAE005", "name": "Em", "cells": ["FM", "FM"]},
+            {"squad": "Squad 1", "id": "VAE006", "name": "Giang", "cells": ["FM-TĐ", ""]},
+        ],
+    }
+
+    def names(self, crew):
+        return {role: [p["name"] for p in people] for role, people in crew.items()}
+
+    def test_cell_has_code_is_a_whole_word_match_ignoring_accents_and_case(self):
+        self.assertTrue(squads.cell_has_code("TĐ", "TĐ"))
+        self.assertTrue(squads.cell_has_code("td", "TĐ"))
+        self.assertTrue(squads.cell_has_code("TĐ - ATHK", "TĐ"))
+        self.assertTrue(squads.cell_has_code("fm/ppc", "PPC"))
+        self.assertFalse(squads.cell_has_code("FMX", "FM"))
+        self.assertFalse(squads.cell_has_code("H ATHK", "TĐ"))
+        self.assertFalse(squads.cell_has_code("", "FM"))
+
+    def test_crew_is_read_from_the_roster_cells_of_that_day_and_squad(self):
+        crew = squads.crew_from_payload(self.PAYLOAD, "Squad 1", "2026-10-01", {"VAE001": "0982132232"})
+        self.assertEqual(self.names(crew), {"truc_doi": ["Binh", "Giang"], "foreman": ["An", "Giang"], "dock_planner": ["Chi"]})
+        self.assertEqual(crew["foreman"][0]["phone"], "0982132232")
+        self.assertEqual(crew["foreman"][1]["phone"], "")  # not in the phone book
+        crew2 = squads.crew_from_payload(self.PAYLOAD, "Squad 1", "2026-10-02")
+        self.assertEqual(self.names(crew2), {"truc_doi": [], "foreman": ["Binh"], "dock_planner": []})
+
+    def test_other_squads_people_never_count(self):
+        crew = squads.crew_from_payload(self.PAYLOAD, "Squad 2", "2026-10-01")
+        self.assertEqual(self.names(crew), {"truc_doi": [], "foreman": ["Em"], "dock_planner": []})
+
+    def test_a_day_not_on_the_roster_gives_an_empty_crew(self):
+        crew = squads.crew_from_payload(self.PAYLOAD, "Squad 1", "2026-12-25")
+        self.assertEqual(self.names(crew), {"truc_doi": [], "foreman": [], "dock_planner": []})
+
+    def test_crew_for_day_end_to_end(self):
+        with mock.patch.object(squads, "configured_squads", return_value=[("Squad 1", "u1"), ("Squad 2", "u2")]), \
+                mock.patch.object(squads, "build_squads_payload", return_value=self.PAYLOAD), \
+                mock.patch.object(squads, "_first_sheet_values", return_value=[["VAE003", "0901234567"]]):
+            out = squads.crew_for_day(0, "2026-10-01")
+            self.assertEqual(out["crew"]["dock_planner"], [{"name": "Chi", "id": "VAE003", "phone": "0901234567"}])
+            self.assertIsNone(out["warning"])
+            self.assertIn("not a day on the roster", squads.crew_for_day(0, "2026-12-25")["warning"])
+
+
 if __name__ == "__main__":
     unittest.main()
