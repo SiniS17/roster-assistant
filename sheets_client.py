@@ -21,14 +21,20 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+# The Daily Distribution page only ever READS other teams' spreadsheets, so it
+# asks Google for view-only scopes (a Viewer share is enough).
+READONLY_SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+DRIVE_READONLY_SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 
 _service = None
+_creds_cache = {}
 
 
-def get_service():
-    global _service
-    if _service is not None:
-        return _service
+def _credentials(scopes):
+    """Service-account credentials for the given scopes (cached per scope set)."""
+    key = tuple(scopes)
+    if key in _creds_cache:
+        return _creds_cache[key]
 
     creds_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
     creds_file = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
@@ -50,17 +56,34 @@ def get_service():
                 "Make sure you pasted the MINIFIED one-line JSON (see HOW_IT_WORKS.md), "
                 "with no extra surrounding quotes, and that you redeployed after setting it."
             ) from e
-        creds = Credentials.from_service_account_info(info, scopes=SCOPES)
+        creds = Credentials.from_service_account_info(info, scopes=scopes)
     elif creds_file:
-        creds = Credentials.from_service_account_file(creds_file, scopes=SCOPES)
+        creds = Credentials.from_service_account_file(creds_file, scopes=scopes)
     else:
         raise RuntimeError(
             "No Google service-account credentials configured. Set "
             "GOOGLE_SERVICE_ACCOUNT_JSON (or GOOGLE_APPLICATION_CREDENTIALS) - see HOW_IT_WORKS.md."
         )
 
-    _service = build("sheets", "v4", credentials=creds, cache_discovery=False)
+    _creds_cache[key] = creds
+    return creds
+
+
+def get_service():
+    global _service
+    if _service is None:
+        _service = build("sheets", "v4", credentials=_credentials(SCOPES), cache_discovery=False)
     return _service
+
+
+def make_readonly_service():
+    """A NEW view-only Sheets client (clients aren't thread-safe, so callers on threads build their own)."""
+    return build("sheets", "v4", credentials=_credentials(READONLY_SCOPES), cache_discovery=False)
+
+
+def make_drive_service():
+    """A NEW view-only Drive client, used to download spreadsheets that are really uploaded .xlsx files."""
+    return build("drive", "v3", credentials=_credentials(DRIVE_READONLY_SCOPES), cache_discovery=False)
 
 
 def parse_sheet_url(url):

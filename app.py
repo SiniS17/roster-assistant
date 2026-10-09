@@ -5,6 +5,8 @@ Website version of the KHDT -> Roster tool.
 
 GET /            roster page (reads the built-in default Roster Google Sheet)
 GET /api/roster  roster grid as JSON (?url=<sheet url>&gid=<tab id>)
+GET /api/distribution      Daily Distribution: the configured spreadsheets + their day tabs
+GET /api/distribution/day  one day's zones/people (?sheet=<n>&tab=<tab title>)
 POST /run        KHDT upload. Changes go to the 'temp' tab, never straight into 'Main'.
                   With the page's fetch() call it answers JSON;
                  a plain browser form post still gets the old result page.
@@ -24,6 +26,7 @@ load_dotenv()
 from flask import Flask, flash, jsonify, redirect, render_template, request, url_for
 
 from config import DEFAULT_ROSTER_SHEET_URL
+from distribution import build_day, build_meta
 from engine import load_khdt, mark_roster_grid
 from log_workbook import write_log_workbook
 from roster_view import build_roster_payload, diff_main_temp, find_tab, list_tabs, rebuild_temp, tab_url
@@ -83,6 +86,29 @@ def api_roster():
         sheet_url=f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit#gid={sheet_id}",
     )
     return jsonify(payload)
+
+
+@app.route("/api/distribution", methods=["GET"])
+def api_distribution():
+    """Info + day-tab list for every configured spreadsheet (view-only). ?refresh=1 skips the cache."""
+    try:
+        sheets = build_meta(force=request.args.get("refresh") == "1")
+    except Exception as e:
+        return jsonify(ok=False, error=f"{type(e).__name__}: {e}"), 400
+    return jsonify(ok=True, sheets=sheets)
+
+
+@app.route("/api/distribution/day", methods=["GET"])
+def api_distribution_day():
+    sheet = (request.args.get("sheet") or "").strip()
+    tab = (request.args.get("tab") or "").strip()
+    if not sheet.isdigit() or not tab:
+        return jsonify(ok=False, error="Missing 'sheet' (number) or 'tab'."), 400
+    try:
+        day = build_day(int(sheet), tab, force=request.args.get("refresh") == "1")
+    except Exception as e:
+        return jsonify(ok=False, error=f"{type(e).__name__}: {e}"), 400
+    return jsonify(ok=True, **day)
 
 
 @app.route("/run", methods=["POST"])
