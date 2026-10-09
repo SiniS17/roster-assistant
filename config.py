@@ -1,31 +1,39 @@
 """User-editable labels for roster markers and the Excel log."""
 
 # ------------------------------------------------------------
-# Default Google Sheet (Roster). Pre-fills the web form; users can
-# still paste a different sheet URL for a different team/month.
-# ------------------------------------------------------------
-DEFAULT_ROSTER_SHEET_URL = (
-    "https://docs.google.com/spreadsheets/d/16cIg2Ufh3FO8Qt6KC7WGzP9NcppfiRziCtsHigVt-T4/edit?hl=vi&pli=1&gid=0#gid=0"
-)
-
-# ------------------------------------------------------------
-# Daily Distribution page: the spreadsheets it reads (view-only).
-# Share each one with the service-account email as *Viewer*.
-# Add as many as you need - one line per spreadsheet. You can also set the
-# DISTRIBUTION_SHEET_URLS environment variable (one URL per line, or comma
-# separated); when set, it replaces this list.
+# Squad spreadsheets (view-only). There is no single "everyone in one sheet"
+# roster any more: each squad keeps its own spreadsheet, and
+#   - the Roster page is built from the 1st sheet of every squad
+#     (members = the rows from the top of the list until a "tăng cường" row
+#     or the first end of the ORD numbering),
+#   - the Daily Distribution page reads the day tabs of the same spreadsheets.
+#
+# ORDER MATTERS: if the same person is listed in more than one squad, they
+# stay in the lowest-numbered squad (Squad 1 wins over 2, 2 over 3, 3 over 4).
+#
+# Share each spreadsheet with the service-account email as *Viewer*.
+# You can also set the SQUAD_SHEET_URLS environment variable (one URL per
+# line, or comma separated, in squad order: first = Squad 1, ...); when set it
+# replaces this list. The old DISTRIBUTION_SHEET_URLS variable still works.
 # ------------------------------------------------------------
 import os as _os
 
-DISTRIBUTION_SHEET_URLS = [
-    "https://docs.google.com/spreadsheets/d/1YH2jSX-QdcuEwL7b8xsqhp9QqiuPGe8aJd96IBFtIHo/edit?gid=2076737416#gid=2076737416",
-    "https://docs.google.com/spreadsheets/d/1sCP1udfS6UWh-YW-hV5Ruhw4zeZhtIrfE1CPTcmAYVY/edit?gid=1860011037#gid=1860011037",
-    "https://docs.google.com/spreadsheets/d/1r1LwVdHPIKW0y2L4qpTGzIatYGKXHU8Mr_KP-i5XL4s/edit?gid=865448519#gid=865448519",
-    "https://docs.google.com/spreadsheets/d/1yPaJLNurDRcUAaV7gaoBaSHA8xe3F7S-Vm1gjr6ktUM/edit?gid=517121129#gid=517121129",
-]
-_env_urls = _os.environ.get("DISTRIBUTION_SHEET_URLS", "").strip()
+SQUAD_SHEET_URLS = {
+    "Squad 1": "https://docs.google.com/spreadsheets/d/1YH2jSX-QdcuEwL7b8xsqhp9QqiuPGe8aJd96IBFtIHo/edit?gid=2076737416#gid=2076737416",
+    "Squad 2": "https://docs.google.com/spreadsheets/d/1sCP1udfS6UWh-YW-hV5Ruhw4zeZhtIrfE1CPTcmAYVY/edit?gid=1860011037#gid=1860011037",
+    "Squad 3": "https://docs.google.com/spreadsheets/d/1r1LwVdHPIKW0y2L4qpTGzIatYGKXHU8Mr_KP-i5XL4s/edit?gid=865448519#gid=865448519",
+    "Squad 4": "https://docs.google.com/spreadsheets/d/1yPaJLNurDRcUAaV7gaoBaSHA8xe3F7S-Vm1gjr6ktUM/edit?gid=517121129#gid=517121129",
+}
+_env_urls = (_os.environ.get("SQUAD_SHEET_URLS") or _os.environ.get("DISTRIBUTION_SHEET_URLS") or "").strip()
 if _env_urls:
-    DISTRIBUTION_SHEET_URLS = [u.strip() for u in _env_urls.replace(",", "\n").splitlines() if u.strip()]
+    SQUAD_SHEET_URLS = {
+        f"Squad {i}": u.strip()
+        for i, u in enumerate((u for u in _env_urls.replace(",", "\n").splitlines() if u.strip()), start=1)
+    }
+
+# The text that ends a squad's own member list on the 1st sheet (matched
+# ignoring accents, case and extra spaces, so "TĂNG CƯỜNG" also matches).
+SQUAD_MEMBER_STOP_LABEL = "tăng cường"
 
 # How long (seconds) fetched sheet data is reused before asking Google again.
 # The page's reload button always bypasses this.

@@ -32,7 +32,7 @@ from datetime import date, datetime, timedelta
 import openpyxl
 from googleapiclient.errors import HttpError
 
-from config import DISTRIBUTION_CACHE_SECONDS, DISTRIBUTION_SHEET_URLS
+from config import DISTRIBUTION_CACHE_SECONDS, SQUAD_SHEET_URLS
 from engine import normalize_id, parse_sheet_date
 from sheets_client import make_drive_service, make_readonly_service, parse_sheet_url
 
@@ -240,8 +240,13 @@ def _cached(key, loader, force=False):
     return value
 
 
+def configured_squads():
+    """[(squad name, url), ...] in priority order (Squad 1 first); entries without a URL are skipped."""
+    return [(name, url.strip()) for name, url in SQUAD_SHEET_URLS.items() if url and url.strip()]
+
+
 def configured_urls():
-    return [u for u in DISTRIBUTION_SHEET_URLS if u and u.strip()]
+    return [url for _, url in configured_squads()]
 
 
 def _source(index, force=False):
@@ -260,6 +265,16 @@ def _first_sheet_values(index, force=False):
     """Values of the 1st sheet only (labels, contacts, phone book) - no colour lookup needed."""
     src = _source(index, force)
     return _cached(("first", src.id), lambda: src.grid(src.tabs()[0], with_colors=False)[0], force)
+
+
+def first_sheet_grid(index, force=False):
+    """(tab title, values, colors) of the 1st sheet of squad spreadsheet number `index` (0-based)."""
+    src = _source(index, force)
+    tabs = src.tabs()
+    if not tabs:
+        raise ValueError("The spreadsheet has no visible sheets.")
+    values, colors = _grid(index, tabs[0], force)
+    return tabs[0], values, colors
 
 
 # -------------------------------------------------------------- tab names
@@ -423,8 +438,8 @@ def parse_info(values):
 
 # ------------------------------------------------------------------- meta
 def _meta_for(index, force=False):
-    url = configured_urls()[index]
-    out = {"index": index, "url": url, "ac": "", "title": "", "check": "", "date_from": None, "date_to": None,
+    squad, url = configured_squads()[index]
+    out = {"index": index, "squad": squad, "url": url, "ac": "", "title": "", "check": "", "date_from": None, "date_to": None,
            "date_text": "", "people": {}, "days": [], "warnings": [], "error": None}
     try:
         src = _source(index, force)

@@ -240,8 +240,8 @@ table.dt{width:100%;min-width:600px;table-layout:fixed;font-size:12.5px}
     <p>Upload the KHDT training-plan file. Changes are written to the “temp” tab so you can review them — the Main tab is never modified.</p>
     <label for="file">KHDT file (.xlsx)</label>
     <input id="file" name="khdt_file" type="file" accept=".xlsx" required>
-    <label for="url">Roster Google Sheet URL</label>
-    <input id="url" name="sheet_url" type="text">
+    <label for="url">Google Sheet URL to update (needs “Main” and “temp” tabs)</label>
+    <input id="url" name="sheet_url" type="text" placeholder="https://docs.google.com/spreadsheets/d/…" required>
     <label class="chk"><input type="checkbox" name="force" id="force"> Overwrite cells that already have content (--force)</label>
     <label class="chk"><input type="checkbox" name="keep" id="keep"> Add to the changes already in temp (otherwise temp restarts from Main)</label>
     <div class="row">
@@ -253,7 +253,6 @@ table.dt{width:100%;min-width:600px;table-layout:fixed;font-size:12.5px}
 </dialog>
 
 <script>
-const DEFAULT_URL = {{ default_sheet_url|tojson }};
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fold = s => String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d').replace(/Đ/g,'D').toLowerCase();
@@ -285,9 +284,9 @@ function menu(open){
 $('menuBtn').onclick = () => menu(!$('drawer').classList.contains('on'));
 $('scrim').onclick = () => menu(false);
 document.addEventListener('keydown', e => { if(e.key === 'Escape') menu(false); });
-$('navRoster').onclick = () => { menu(false); if(S.view !== 'roster') setView('roster'); };
+$('navRoster').onclick = () => { menu(false); S.url = ''; S.gid = ''; setView('roster'); };  // always back to all squads
 $('navDist').onclick = () => { menu(false); if(S.view !== 'dist') setView('dist'); };
-$('navKhdt').onclick = () => { menu(false); if(S.view !== 'roster') setView('roster'); $('url').value = S.url || DEFAULT_URL; $('khdt').showModal(); };
+$('navKhdt').onclick = () => { menu(false); if(S.view !== 'roster') setView('roster'); $('url').value = S.url; $('khdt').showModal(); };
 $('closeDlg').onclick = () => $('khdt').close();
 
 /* ---------- zoom / search ---------- */
@@ -300,14 +299,15 @@ $('zIn').onclick = () => setZoom(S.zoom + .1);
 $('zOut').onclick = () => setZoom(S.zoom - .1);
 $('q').oninput = () => render();
 $('team').onchange = () => { S.team = $('team').value; render(); };
-$('reload').onclick = () => S.view === 'dist' ? loadDist(true) : load();
+$('reload').onclick = () => S.view === 'dist' ? loadDist(true) : load(true);
 
 /* ---------- loading ---------- */
-async function load(){
+async function load(force){
   $('wrap').innerHTML = '<div class="msg">Loading roster…</div>';
   const p = new URLSearchParams();
   if(S.url) p.set('url', S.url);
   if(S.gid !== '') p.set('gid', S.gid);
+  if(force === true) p.set('refresh', '1');
   try{
     const r = await fetch('/api/roster?' + p);
     const j = await r.json();
@@ -337,6 +337,13 @@ function kindOf(v, color){
 /* ---------- render ---------- */
 function render(){
   const d = S.data; if(!d) return;
+  if(!d.dates.length){
+    $('tabs').innerHTML = ''; $('stats').innerHTML = ''; $('note').hidden = true;
+    $('wrap').innerHTML = '<div class="msg"><div><b>No roster days found</b><p>' + (d.notes || []).map(esc).join('<br>') +
+      '</p><p>The 1st sheet of each squad needs a header row with ID, NAME and one date per day.</p>' +
+      '<button class="btn" onclick="load(true)">Try again</button></div></div>';
+    return;
+  }
   const dates = d.dates.map(s => { const [y,m,da] = s.split('-').map(Number); return new Date(y, m-1, da); });
   const today = new Date(); today.setHours(0,0,0,0);
   const sameDay = (a,b) => a.getTime() === b.getTime();
@@ -352,6 +359,9 @@ function render(){
     note.hidden = false; note.className = 'note warn';
     note.innerHTML = `<span><b>temp</b> has ${d.pending} pending change(s) from a KHDT run.</span><button id="seeTemp">Review in temp</button>`;
     $('seeTemp').onclick = () => { S.gid = tempTab.gid; load(); };
+  } else if(d.view === 'squads' && (d.notes || []).length){
+    note.hidden = false; note.className = 'note warn';
+    note.innerHTML = '<span>' + d.notes.map(esc).join(' · ') + '</span>';
   } else note.hidden = true;
   $('tabs').querySelectorAll('.tab').forEach(b => b.onclick = () => { S.gid = b.dataset.gid; load(); });
   const first = dates[0], last = dates[dates.length-1];
@@ -359,7 +369,7 @@ function render(){
     : `${MON[first.getMonth()]} – ${MON[last.getMonth()]} ${last.getFullYear()}`;
 
   // filters: Đội + search
-  const hi = d.info_headers.findIndex(t => /(^|[^a-z])doi($|[^a-z])/.test(fold(t)));
+  const hi = d.info_headers.findIndex(t => /(^|[^a-z])(doi|squad)($|[^a-z])/.test(fold(t)));
   const teamOf = e => hi >= 0 ? (e.info[hi] || '') : '';
   const tsel = $('team');
   if(hi >= 0){
@@ -486,7 +496,7 @@ async function loadDist(force){
     if(my !== DIST.req) return;
     DIST.meta = j.sheets; if(force) DIST.days.clear();
     if(!j.sheets.length){
-      $('wrap').innerHTML = '<div class="msg"><div><b>No spreadsheets configured yet</b><p>Add the Google Sheet links to <code>DISTRIBUTION_SHEET_URLS</code> in config.py (or set the DISTRIBUTION_SHEET_URLS environment variable), share each one with the service account as Viewer, then reload.</p></div></div>';
+      $('wrap').innerHTML = '<div class="msg"><div><b>No spreadsheets configured yet</b><p>Add the Google Sheet links to <code>SQUAD_SHEET_URLS</code> in config.py (or set the SQUAD_SHEET_URLS environment variable), share each one with the service account as Viewer, then reload.</p></div></div>';
       return;
     }
     if(!DIST.init){
@@ -514,7 +524,7 @@ function pickDefaultDay(){
 function renderDist(){
   const sh = DIST.meta[DIST.sheet];
   $('tabs').innerHTML = DIST.meta.map((s, i) =>
-    `<button class="tab ${i === DIST.sheet ? 'on' : ''}" data-i="${i}" title="${esc(s.title || '')}">${esc(s.ac)}${s.error ? '<span class="badge" title="Could not read this spreadsheet">!</span>' : ''}</button>`).join('');
+    `<button class="tab ${i === DIST.sheet ? 'on' : ''}" data-i="${i}" title="${esc(s.title || '')}">${esc(s.squad)} · ${esc(s.ac)}${s.error ? '<span class="badge" title="Could not read this spreadsheet">!</span>' : ''}</button>`).join('');
   $('tabs').querySelectorAll('.tab').forEach(b => b.onclick = () => {
     DIST.sheet = +b.dataset.i;
     try{ localStorage.setItem('distSheet', DIST.sheet); }catch(e){}
@@ -623,7 +633,7 @@ $('khdtForm').onsubmit = async ev => {
       a.download = 'khdt_roster_log.xlsx'; a.click(); URL.revokeObjectURL(a.href);
     };
     S.updated = new Set();
-    S.url = $('url').value.trim() === DEFAULT_URL ? '' : $('url').value.trim();
+    S.url = $('url').value.trim();  // review the KHDT changes in that sheet's temp tab
     S.gid = j.gid;
     await load();
     $('see').onclick = () => $('khdt').close();

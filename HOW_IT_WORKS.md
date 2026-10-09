@@ -93,10 +93,37 @@ it with a colleague. See **Setup**, below.
 
 Nothing is ever written to KHDT — it's read-only input.
 
+## Roster page (built from the squads, read-only)
+
+There is no single "everyone in one sheet" roster any more. The Roster page is
+built from the **1st sheet of each squad spreadsheet** (`SQUAD_SHEET_URLS` in
+`config.py`: Squad 1 to Squad 4).
+
+**Who is in a squad.** On the 1st sheet, the roster table (header with `ORD`,
+`NAME AND SURNAME`, `ID`, ...) lists the members from the top down until the
+FIRST of these:
+- a **"tăng cường"** row (reinforcements from elsewhere - matched ignoring
+  accents/case, so `TĂNG CƯỜNG` works; a person's own REMARK mentioning it does
+  not count), or
+- the **first end of the ORD numbering** (ORD blank / not a number, or it stops
+  increasing, e.g. a second list starting again at 1).
+
+Everything below that point is not a member of that squad.
+
+**If a person is in more than one squad** they stay in the lowest-numbered one
+(Squad 1 beats 2, 2 beats 3, 3 beats 4). The page shows a note with how many
+people that affected.
+
+The day columns (dates in the header row) come from each squad's own 1st
+sheet; the page shows the union of all squads' days. A squad that can't be read
+is reported in the note bar and the other squads still show. Side menu →
+**Roster** always returns to this all-squads view; the Squad filter at the top
+narrows it to one squad.
+
 ## Daily Distribution page (read-only)
 
-Side menu → **Daily Distribution** (or open `/#distribution`). It reads several
-other Google spreadsheets - one per aircraft/check - and shows who goes to
+Side menu → **Daily Distribution** (or open `/#distribution`). It reads the
+same squad spreadsheets - tabs are labelled `Squad 1 · <A/C>`... - and shows who goes to
 which zone on a chosen day. It never writes to them.
 
 **Each spreadsheet is expected to look like this**
@@ -118,9 +145,11 @@ which zone on a chosen day. It never writes to them.
 1. Ask each owner to share their spreadsheet with the service-account email as
    **Viewer** (the same bot email already used for the Roster; it only needs
    view access here - the page asks Google for read-only scopes).
-2. Put the links in `DISTRIBUTION_SHEET_URLS` in `config.py` (one per line, as
-   many as you need), or set the `DISTRIBUTION_SHEET_URLS` environment variable
-   (one URL per line or comma-separated) - the variable wins if both are set.
+2. Put the links in `SQUAD_SHEET_URLS` in `config.py` (named `Squad 1` ...
+   `Squad 4`; the order is the priority order), or set the `SQUAD_SHEET_URLS`
+   environment variable (one URL per line or comma-separated, first = Squad 1) -
+   the variable wins if both are set. The old `DISTRIBUTION_SHEET_URLS`
+   variable is still read as a fallback.
 3. Enable the **Google Drive API** in the same Google Cloud project *only if*
    some of those files are uploaded `.xlsx` files that were opened in Google
    Sheets (the Sheets API can't read those; the page then downloads them
@@ -153,15 +182,19 @@ pip install -r requirements.txt
 python app.py
 ```
 
-Then open `http://localhost:5000`, upload the KHDT file, confirm/edit the
-Roster Sheet URL (defaults to the one configured in `config.py`), and click
-**Run**.
+Then open `http://localhost:5000`. For a KHDT run, use side menu → **KHDT → Roster**,
+upload the KHDT file, paste the URL of the Google Sheet to update (it needs `Main`
+and `temp` tabs - there is no built-in default any more), and click **Run**.
+
+Tests (no Google access needed): `python -m unittest discover -s tests -v`
 
 ## Configuration
 
 Edit `config.py`:
-- `DEFAULT_ROSTER_SHEET_URL` — pre-fills the form; users can still paste a
-  different sheet URL (e.g. a different team or month).
+- `SQUAD_SHEET_URLS` — the squad spreadsheets, `Squad 1` ... `Squad 4`, in
+  priority order (see "Roster page" above).
+- `SQUAD_MEMBER_STOP_LABEL` — the text that ends a squad's member list
+  (`tăng cường`).
 - `COURSE_ABBREVIATIONS` / `COURSE_NAME_ABBREVIATIONS` — marker shorthand.
 - `MARKER_PREFIX` — defaults to `H`.
 - `LOG_COLUMN_HEADERS` / `LOG_EVENT_LABELS` — labels used in the log file.
@@ -173,7 +206,9 @@ Edit `config.py`:
 | `app.py` | Flask routes: roster page, `/run`, `/api/roster`, `/api/distribution*` |
 | `engine.py` | All KHDT-parsing and Roster-matching/marking logic |
 | `sheets_client.py` | Google Sheets read/write (service-account auth) |
-| `distribution.py` | Daily Distribution: reads the other spreadsheets, parses info + day tabs |
+| `squads.py` | Roster page: squad members from each 1st sheet, Squad 1→4 priority merge |
+| `distribution.py` | Daily Distribution: reads the squad spreadsheets, parses info + day tabs |
 | `log_workbook.py` | Builds the downloadable `.xlsx` run log |
-| `config.py` | Abbreviations, log labels, default Sheet URL |
+| `config.py` | Squad sheet URLs, abbreviations, log labels |
+| `tests/` | Unit tests for `squads.py` (synthetic grids, no Google access) |
 | `templates/`, `static/` | Upload form + results page |

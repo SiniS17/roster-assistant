@@ -3,11 +3,12 @@ app.py
 ================
 Website version of the KHDT -> Roster tool.
 
-GET /            roster page (reads the built-in default Roster Google Sheet)
-GET /api/roster  roster grid as JSON (?url=<sheet url>&gid=<tab id>)
+GET /            roster page (built from the 1st sheet of every squad spreadsheet)
+GET /api/roster  roster grid as JSON - all squads by default (?refresh=1 skips the cache);
+                 with ?url=<sheet url>&gid=<tab id> it shows that one sheet (Main/temp review of a KHDT run)
 GET /api/distribution      Daily Distribution: the configured spreadsheets + their day tabs
 GET /api/distribution/day  one day's zones/people (?sheet=<n>&tab=<tab title>)
-POST /run        KHDT upload. Changes go to the 'temp' tab, never straight into 'Main'.
+POST /run        KHDT upload into the sheet whose URL is pasted in the form. Changes go to the 'temp' tab, never straight into 'Main'.
                   With the page's fetch() call it answers JSON;
                  a plain browser form post still gets the old result page.
 
@@ -25,12 +26,12 @@ load_dotenv()
 
 from flask import Flask, flash, jsonify, redirect, render_template, request, url_for
 
-from config import DEFAULT_ROSTER_SHEET_URL
 from distribution import build_day, build_meta
 from engine import load_khdt, mark_roster_grid
 from log_workbook import write_log_workbook
 from roster_view import build_roster_payload, diff_main_temp, find_tab, list_tabs, rebuild_temp, tab_url
 from sheets_client import parse_sheet_url, read_roster_grid, write_roster_updates
+from squads import build_squads_payload
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-change-me")
@@ -42,13 +43,19 @@ def _wants_json():
 
 @app.route("/", methods=["GET"])
 def index():
-    return render_template("index.html", default_sheet_url=DEFAULT_ROSTER_SHEET_URL)
+    return render_template("index.html")
 
 
 @app.route("/api/roster", methods=["GET"])
 def api_roster():
-    sheet_url = (request.args.get("url") or "").strip() or DEFAULT_ROSTER_SHEET_URL
+    sheet_url = (request.args.get("url") or "").strip()
     gid = (request.args.get("gid") or "").strip()
+    if not sheet_url:  # normal case: everybody, from the 1st sheet of every squad
+        try:
+            payload = build_squads_payload(force=request.args.get("refresh") == "1")
+        except Exception as e:
+            return jsonify(ok=False, error=f"{type(e).__name__}: {e}"), 400
+        return jsonify(ok=True, **payload)
     try:
         spreadsheet_id, _ = parse_sheet_url(sheet_url)
         tabs = list_tabs(spreadsheet_id)
@@ -114,7 +121,7 @@ def api_distribution_day():
 @app.route("/run", methods=["POST"])
 def run():
     khdt_file = request.files.get("khdt_file")
-    sheet_url = (request.form.get("sheet_url") or "").strip() or DEFAULT_ROSTER_SHEET_URL
+    sheet_url = (request.form.get("sheet_url") or "").strip()
     force = request.form.get("force") == "on"
     keep = request.form.get("keep") == "on"
 
@@ -126,6 +133,8 @@ def run():
 
     if not khdt_file or khdt_file.filename == "":
         return fail("Please choose a KHDT .xlsx file.")
+    if not sheet_url:
+        return fail("Paste the Google Sheet URL to write the KHDT changes into (it needs 'Main' and 'temp' tabs).")
 
     log_lines = []
     event_log = {}

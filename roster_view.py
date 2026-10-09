@@ -40,7 +40,7 @@ def build_roster_payload(title, values, colors):
 
     # Any labelled column left of the first date (position, group, ...) is
     # shown as small secondary text under the employee name.
-    skip = {"stt", "tt", "no", "no.", "#"}
+    skip = {"stt", "tt", "no", "no.", "#", "ord"}
     info_cols = [
         c
         for c in range(first_date_col)
