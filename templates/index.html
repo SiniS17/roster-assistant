@@ -164,6 +164,7 @@ body[data-view="dist"] .zoom, body[data-view="dist"] #team, body[data-view="dist
 .crew span{display:block;margin-top:2px;color:var(--muted);font:11px Consolas,monospace}
 .dist-cols{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:20px;align-items:start}
 .dist-col{display:flex;flex-direction:column;gap:16px;min-width:0}
+.dist-cols.solo{grid-template-columns:minmax(0,1fr)}
 .dcard{border:1px solid var(--line);border-radius:10px;background:var(--panel);overflow:hidden}
 .dcard>header{display:flex;align-items:center;gap:8px;padding:9px 14px;font-weight:700;font-size:12px;letter-spacing:.06em;border-bottom:1px solid var(--line)}
 .dcard.zone>header{background:rgba(25,195,125,.10);color:var(--green)}
@@ -588,7 +589,8 @@ function paintDay(sh, day){
     const cls = z.time ? 'shift' : 'zone', ico = z.time ? (h >= 20 || h < 5 ? IC.moon : IC.sun) : IC.pin;
     return `<section class="dcard ${cls}"><header>${ico}<span>${esc(z.title)}</span></header>` +
       (z.people.length ? peopleTable(z.people) : `<div class="empty">No personnel assigned.</div>`) + '</section>';
-  }).join('') || '<section class="dcard"><div class="empty">No zones found on this tab.</div></section>';
+  }).join('');
+  const noZones = '<section class="dcard"><div class="empty">No zones found on this tab.</div></section>';
 
   const shop = (title, sec) => {
     return `<section class="dcard shop"><header>${IC.tool}<span>${esc(title)}</span><span class="tag">${sec && sec.people.length ? sec.people.length + ' ASSIGNED' : 'UNASSIGNED'}</span></header>` +
@@ -617,7 +619,10 @@ function paintDay(sh, day){
   $('wrap').innerHTML = `<div class="dist"><div class="dist-head"><div><h1 class="dist-date">${fmtHeading(day.date)}</h1>` +
     `<div class="dist-meta">A/C: <b>${esc(day.ac || sh.ac || '–')}</b><i>•</i>CHECK: <b>${esc(day.check || sh.check || '–')}</b><i>•</i>DATE: <b>${esc(range)}</b></div></div>` +
     `<div class="crew">${crew}</div></div>` +
-    `<div class="dist-cols"><div class="dist-col">${zoneHtml}</div><div class="dist-col">${shopHtml}</div></div>${warn}</div>`;
+    (zones.length
+      ? `<div class="dist-cols"><div class="dist-col">${zoneHtml}</div><div class="dist-col">${shopHtml}</div></div>`
+      // No zones on this tab: the shops take the full width and the "no zones" notice goes last.
+      : `<div class="dist-cols solo"><div class="dist-col">${shopHtml}${noZones}</div></div>`) + `${warn}</div>`;
 }
 
 /* ---------- KHDT run ---------- */
