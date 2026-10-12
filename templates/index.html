@@ -604,10 +604,9 @@ function peopleTable(people){
 }
 
 function paintDay(sh, day){
-  // Zones/shops with people come first; empty ones sink to the bottom. The sort is stable, so each
-  // group keeps its original order (sheet order for zones, the SHOPS list order for shops).
-  const filled = x => (x.people.length ? 0 : 1);
-  const zones = day.sections.filter(s => s.kind === 'zone').sort((x, y) => filled(x) - filled(y));
+  // Only zones/shops with people are drawn, in their original order (sheet order for zones, the SHOPS list order for shops).
+  // Empty zones are not drawn either: the "These zone(s) have no assigned staff" notice names them.
+  const zones = day.sections.filter(s => s.kind === 'zone' && s.people.length);
   const others = day.sections.filter(s => s.kind !== 'zone');
   const zoneHtml = zones.map(z => {
     const h = z.time ? parseInt(z.time, 10) : null;
