@@ -26,4 +26,11 @@ Daily Distribution page. Full behaviour of the KHDT flow is in `HOW_IT_WORKS.md`
 - Daily Distribution page (`templates/index.html`, `paintDay`): zones and shops with people are listed first,
   empty ones (UNASSIGNED / "No personnel assigned") sink to the bottom. Stable sort, so the default order
   (sheet order for zones, `SHOPS` order for shops) is kept within each group.
-- When a tab has no zones, the shops column takes the full width and the "No zones found on this tab." card is shown last (`.dist-cols.solo`).
+- When a tab has no zones, the shops column takes the full width (`.dist-cols.solo`).
+- Daily Distribution "unstaffed zones" notice (`templates/index.html`: `FIXED_ZONES`, `zonesInTitle`, `unstaffedZones`):
+  replaced "No zones found on this tab." The fixed zones are 128, 567, 34, AVI, STRUCTURE SHEET METAL,
+  STRUCTURE COMPOSITE, STRUCTURE PAINTING, CABIN. Any of them with nobody assigned (missing from the tab, or an empty
+  table) is listed as "These zone(s) have no assigned staff: ...", last in the shops column, whether or not the tab has zone cards.
+  Combined titles are understood by regex over the folded section title (any section kind, `@16H00` stripped):
+  `128/567`, `34/567`, `34567` (= 34 + 567), `12834567`, `128 + AVI`; `ALL ZONES` = 128 + 34 + 567 + AVI only (not the shops).
+  Only sections that have people count as covering a zone. Digits are matched only as 128 / 567 / 34, so a lone `3` or `5` is ignored.
