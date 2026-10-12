@@ -25,7 +25,7 @@ load_dotenv()
 
 from flask import Flask, flash, jsonify, redirect, render_template, request, url_for
 
-from config import DEFAULT_ROSTER_SHEET_URL
+from config import DEFAULT_ROSTER_SHEET_URL, DISTRIBUTION_ROLE_MARKERS
 from distribution import build_day, build_meta
 from engine import load_khdt, mark_roster_grid
 from log_workbook import write_log_workbook
@@ -95,7 +95,7 @@ def api_distribution():
         sheets = build_meta(force=request.args.get("refresh") == "1")
     except Exception as e:
         return jsonify(ok=False, error=f"{type(e).__name__}: {e}"), 400
-    return jsonify(ok=True, sheets=sheets)
+    return jsonify(ok=True, sheets=sheets, role_markers=DISTRIBUTION_ROLE_MARKERS)
 
 
 @app.route("/api/distribution/day", methods=["GET"])

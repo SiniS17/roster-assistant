@@ -484,7 +484,7 @@ async function loadDist(force){
     const j = await r.json();
     if(!j.ok) throw new Error(j.error || 'Unknown error');
     if(my !== DIST.req) return;
-    DIST.meta = j.sheets; if(force) DIST.days.clear();
+    DIST.meta = j.sheets; DIST.markers = j.role_markers || {}; if(force) DIST.days.clear();
     if(!j.sheets.length){
       $('wrap').innerHTML = '<div class="msg"><div><b>No spreadsheets configured yet</b><p>Add the Google Sheet links to <code>DISTRIBUTION_SHEET_URLS</code> in config.py (or set the DISTRIBUTION_SHEET_URLS environment variable), share each one with the service account as Viewer, then reload.</p></div></div>';
       return;
@@ -494,7 +494,7 @@ async function loadDist(force){
       DIST.sheet = saved >= 0 && saved < j.sheets.length ? saved : 0;
     } else if(DIST.sheet >= j.sheets.length) DIST.sheet = 0;
     pickDefaultDay();
-    renderDist();
+    renderDist(force);
   }catch(e){
     if(my !== DIST.req) return;
     $('wrap').innerHTML = '<div class="msg"><div><b>Couldn’t load the distribution</b><code>' + esc(e.message) + '</code>' +
@@ -511,10 +511,10 @@ function pickDefaultDay(){
   DIST.tab = best.tab;
 }
 
-function renderDist(){
+function renderDist(force){
   const sh = DIST.meta[DIST.sheet];
   $('tabs').innerHTML = DIST.meta.map((s, i) =>
-    `<button class="tab ${i === DIST.sheet ? 'on' : ''}" data-i="${i}" title="${esc(s.title || '')}">${esc(s.ac)}${s.error ? '<span class="badge" title="Could not read this spreadsheet">!</span>' : ''}</button>`).join('');
+    `<button class="tab ${i === DIST.sheet ? 'on' : ''}" data-i="${i}" title="${esc([s.ac, s.title].filter(Boolean).join(' · '))}">${esc(s.name || s.ac)}${s.error ? '<span class="badge" title="Could not read this spreadsheet">!</span>' : ''}</button>`).join('');
   $('tabs').querySelectorAll('.tab').forEach(b => b.onclick = () => {
     DIST.sheet = +b.dataset.i;
     try{ localStorage.setItem('distSheet', DIST.sheet); }catch(e){}
@@ -524,7 +524,7 @@ function renderDist(){
 
   if(sh.error){
     $('stats').innerHTML = '';
-    $('wrap').innerHTML = '<div class="msg"><div><b>Couldn’t read ' + esc(sh.ac) + '</b><code>' + esc(sh.error) + '</code>' +
+    $('wrap').innerHTML = '<div class="msg"><div><b>Couldn’t read ' + esc(sh.name || sh.ac) + '</b><code>' + esc(sh.error) + '</code>' +
       '<p>Check the link and that the spreadsheet is shared with the service account (Viewer is enough).</p>' +
       '<button class="btn" onclick="loadDist(true)">Try again</button></div></div>';
     return;
@@ -541,18 +541,21 @@ function renderDist(){
     $('wrap').innerHTML = '<div class="msg"><div><b>No day tabs</b><p>Name each day’s tab like <code>' + esc(sh.ac) + '-SEP21</code> (A/C, month, day).</p></div></div>';
     return;
   }
-  loadDay(sh);
+  loadDay(sh, force);
 }
 
+// A day fetched in this page is reused for 60 s (same as the server cache), then fetched again.
+const DAY_TTL_MS = 60000;
 async function loadDay(sh, force){
   const my = ++DIST.req, key = DIST.sheet + '|' + DIST.tab;
-  if(!force && DIST.days.has(key)){ paintDay(sh, DIST.days.get(key)); return; }
+  const hit = DIST.days.get(key);
+  if(!force && hit && Date.now() - hit.t < DAY_TTL_MS){ paintDay(sh, hit.j); return; }
   $('wrap').innerHTML = '<div class="msg">Loading ' + esc(DIST.tab) + '…</div>';
   try{
-    const r = await fetch('/api/distribution/day?sheet=' + DIST.sheet + '&tab=' + encodeURIComponent(DIST.tab));
+    const r = await fetch('/api/distribution/day?sheet=' + DIST.sheet + '&tab=' + encodeURIComponent(DIST.tab) + (force ? '&refresh=1' : ''));
     const j = await r.json();
     if(!j.ok) throw new Error(j.error || 'Unknown error');
-    DIST.days.set(key, j);
+    DIST.days.set(key, {t: Date.now(), j});
     if(my === DIST.req) paintDay(sh, j);
   }catch(e){
     if(my !== DIST.req) return;
@@ -591,8 +594,8 @@ function paintDay(sh, day){
   let shopHtml = SHOPS.map(t => shop(t, others.find(o => fold(o.title) === fold(t)))).join('');
   shopHtml += others.filter(o => !used.has(o) && o.people.length).map(o => shop(o.title, o)).join('');
 
-  const crew = CREW.map(([k, label]) => { const p = (sh.people || {})[k];
-    return `<div><small>${label}</small><b title="${p ? esc(p.name) : ''}">${p ? esc(p.name) : '–'}</b><span>${p && p.phone ? esc(p.phone) : '–'}</span></div>`; }).join('');
+  const crew = CREW.map(([k, label]) => { const p = (sh.people || {})[k]; const mk = (DIST.markers || {})[k];
+    return `<div><small>${label}${mk ? ` · ${esc(mk)}` : ''}</small><b title="${p ? esc(p.name) : ''}">${p ? esc(p.name) : '–'}</b><span>${p && p.phone ? esc(p.phone) : '–'}</span></div>`; }).join('');
   const range = sh.date_from ? fmtRange(sh.date_from, sh.date_to) : (sh.date_text || '–');
   const warn = (sh.warnings || []).length ? `<div class="dist-warn">⚠ ${sh.warnings.map(esc).join(' · ')}</div>` : '';
 

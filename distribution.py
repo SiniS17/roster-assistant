@@ -32,7 +32,12 @@ from datetime import date, datetime, timedelta
 import openpyxl
 from googleapiclient.errors import HttpError
 
-from config import DISTRIBUTION_CACHE_SECONDS, DISTRIBUTION_SHEET_URLS
+from config import (
+    DISTRIBUTION_CACHE_SECONDS,
+    DISTRIBUTION_ROLE_MARKERS,
+    DISTRIBUTION_SHEET_NAMES,
+    DISTRIBUTION_SHEET_URLS,
+)
 from engine import normalize_id, parse_sheet_date
 from sheets_client import make_drive_service, make_readonly_service, parse_sheet_url
 
@@ -244,6 +249,13 @@ def configured_urls():
     return [u for u in DISTRIBUTION_SHEET_URLS if u and u.strip()]
 
 
+def configured_names():
+    """Display name per configured spreadsheet, by position ('Squad 1' ... 'Squad 4')."""
+    names = list(DISTRIBUTION_SHEET_NAMES or [])
+    return [(names[i].strip() if i < len(names) and str(names[i]).strip() else f"Squad {i + 1}")
+            for i in range(len(configured_urls()))]
+
+
 def _source(index, force=False):
     urls = configured_urls()
     if not 0 <= index < len(urls):
@@ -251,14 +263,16 @@ def _source(index, force=False):
     return _cached(("src", urls[index]), lambda: open_source(urls[index]), force)
 
 
-def _grid(index, tab, force=False):
-    src = _source(index, force)
+# `src` lets a caller that has just (re)opened the source reuse it, so one forced
+# refresh reopens the spreadsheet once instead of once per call.
+def _grid(index, tab, force=False, src=None):
+    src = src or _source(index, force)
     return _cached(("grid", src.id, tab), lambda: src.grid(tab), force)
 
 
-def _first_sheet_values(index, force=False):
+def _first_sheet_values(index, force=False, src=None):
     """Values of the 1st sheet only (labels, contacts, phone book) - no colour lookup needed."""
-    src = _source(index, force)
+    src = src or _source(index, force)
     return _cached(("first", src.id), lambda: src.grid(src.tabs()[0], with_colors=False)[0], force)
 
 
@@ -424,15 +438,15 @@ def parse_info(values):
 # ------------------------------------------------------------------- meta
 def _meta_for(index, force=False):
     url = configured_urls()[index]
-    out = {"index": index, "url": url, "ac": "", "title": "", "check": "", "date_from": None, "date_to": None,
-           "date_text": "", "people": {}, "days": [], "warnings": [], "error": None}
+    out = {"index": index, "url": url, "name": configured_names()[index], "ac": "", "title": "", "check": "",
+           "date_from": None, "date_to": None, "date_text": "", "people": {}, "days": [], "warnings": [], "error": None}
     try:
         src = _source(index, force)
         out["title"] = src.title
         tabs = src.tabs()
         if not tabs:
             raise ValueError("The spreadsheet has no visible sheets.")
-        info, phones, warnings = parse_info(_first_sheet_values(index, force))
+        info, phones, warnings = parse_info(_first_sheet_values(index, force, src))
         out["warnings"] = warnings
         out["people"] = info["people"]
         out["check"] = info["check"]
@@ -587,8 +601,9 @@ def build_day(index, tab, force=False):
     day = next((d for d in meta["days"] if d["tab"] == tab), None)
     if not day:
         raise ValueError(f"Tab '{tab}' is not a day tab of this spreadsheet.")
-    _, phones, _ = parse_info(_first_sheet_values(index, force))
-    values, colors = _grid(index, tab, force)
+    src = _source(index)  # meta_for(force) above has just refreshed it when force is set
+    _, phones, _ = parse_info(_first_sheet_values(index, force, src))
+    values, colors = _grid(index, tab, force, src)
     return {
         "index": index,
         "tab": tab,

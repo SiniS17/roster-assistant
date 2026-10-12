@@ -162,6 +162,11 @@ Roster Sheet URL (defaults to the one configured in `config.py`), and click
 Edit `config.py`:
 - `DEFAULT_ROSTER_SHEET_URL` — pre-fills the form; users can still paste a
   different sheet URL (e.g. a different team or month).
+- `DISTRIBUTION_SHEET_URLS` / `DISTRIBUTION_SHEET_NAMES` — the Daily Distribution
+  spreadsheets and their tab names, matched by position (1st URL = Squad 1 ...
+  last = Squad 4).
+- `DISTRIBUTION_ROLE_MARKERS` — roster codes for the crew roles: Trực đội = `TĐ`,
+  Dock planner = `ppc`, Foreman = `fm`.
 - `COURSE_ABBREVIATIONS` / `COURSE_NAME_ABBREVIATIONS` — marker shorthand.
 - `MARKER_PREFIX` — defaults to `H`.
 - `LOG_COLUMN_HEADERS` / `LOG_EVENT_LABELS` — labels used in the log file.
