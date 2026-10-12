@@ -20,7 +20,7 @@ import os as _os
 DISTRIBUTION_SHEET_URLS = [
     "https://docs.google.com/spreadsheets/d/1YH2jSX-QdcuEwL7b8xsqhp9QqiuPGe8aJd96IBFtIHo/edit?gid=2076737416#gid=2076737416",
     "https://docs.google.com/spreadsheets/d/1sCP1udfS6UWh-YW-hV5Ruhw4zeZhtIrfE1CPTcmAYVY/edit?gid=1860011037#gid=1860011037",
-    https://docs.google.com/spreadsheets/d/1r1LwVdHPIKW0y2L4qpTGzIatYGKXHU8Mr_KP-i5XL4s/edit?usp=drivesdk",
+    "https://docs.google.com/spreadsheets/d/1r1LwVdHPIKW0y2L4qpTGzIatYGKXHU8Mr_KP-i5XL4s/edit?usp=drivesdk",
     "https://docs.google.com/spreadsheets/d/1yPaJLNurDRcUAaV7gaoBaSHA8xe3F7S-Vm1gjr6ktUM/edit?gid=517121129#gid=517121129",
 ]
 _env_urls = _os.environ.get("DISTRIBUTION_SHEET_URLS", "").strip()
