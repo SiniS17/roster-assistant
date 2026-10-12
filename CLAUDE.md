@@ -23,3 +23,6 @@ Daily Distribution page. Full behaviour of the KHDT flow is in `HOW_IT_WORKS.md`
 - Fixed Squad 1 Daily Distribution showing no days: numbered tabs had no month because
   `roster_month()` only searched text. It now reads the header dates first (`distribution.py`).
   Known leftover: `find_roster_header_grid` treats a plain `1` cell as a 1899 date (affects `engine.py` expected-year only).
+- Daily Distribution page (`templates/index.html`, `paintDay`): zones and shops with people are listed first,
+  empty ones (UNASSIGNED / "No personnel assigned") sink to the bottom. Stable sort, so the default order
+  (sheet order for zones, `SHOPS` order for shops) is kept within each group.
