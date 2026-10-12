@@ -159,6 +159,8 @@ body[data-view="dist"] .zoom, body[data-view="dist"] #team, body[data-view="dist
 .crew>div:first-child{border-left:0}
 .crew small{display:block;color:var(--muted);font-size:10px;letter-spacing:.08em;font-weight:600;white-space:nowrap}
 .crew b{display:block;margin-top:4px;font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.crew b+span+b{margin-top:8px}
+.crew b em{font-style:normal;font-weight:500;color:var(--muted);font-size:11px}
 .crew span{display:block;margin-top:2px;color:var(--muted);font:11px Consolas,monospace}
 .dist-cols{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:20px;align-items:start}
 .dist-col{display:flex;flex-direction:column;gap:16px;min-width:0}
@@ -594,8 +596,17 @@ function paintDay(sh, day){
   let shopHtml = SHOPS.map(t => shop(t, others.find(o => fold(o.title) === fold(t)))).join('');
   shopHtml += others.filter(o => !used.has(o) && o.people.length).map(o => shop(o.title, o)).join('');
 
-  const crew = CREW.map(([k, label]) => { const p = (sh.people || {})[k]; const mk = (DIST.markers || {})[k];
-    return `<div><small>${label}${mk ? ` · ${esc(mk)}` : ''}</small><b title="${p ? esc(p.name) : ''}">${p ? esc(p.name) : '–'}</b><span>${p && p.phone ? esc(p.phone) : '–'}</span></div>`; }).join('');
+  // Crew for this day: the TĐ / PPC / FM codes in the roster's column for the day win; otherwise the
+  // FOREMAN / TRỰC ĐỘI / ... labels on the spreadsheet's 1st sheet.
+  const crew = CREW.map(([k, label]) => {
+    const mk = (DIST.markers || {})[k], fromRoster = (day.crew || {})[k] || [], p = (sh.people || {})[k];
+    const people = fromRoster.length ? fromRoster : (p ? [p] : []);
+    const rows = people.length ? people.map(x => {
+      const note = x.note && mk && fold(x.note) !== fold(mk) ? ` <em>${esc(x.note)}</em>` : '';
+      return `<b title="${esc(x.name + (x.note ? ' (' + x.note + ')' : ''))}">${esc(x.name)}${note}</b><span>${x.phone ? esc(x.phone) : '–'}</span>`;
+    }).join('') : '<b>–</b><span>–</span>';
+    return `<div><small>${label}${mk ? ` · ${esc(mk)}` : ''}</small>${rows}</div>`;
+  }).join('');
   const range = sh.date_from ? fmtRange(sh.date_from, sh.date_to) : (sh.date_text || '–');
   const warn = (sh.warnings || []).length ? `<div class="dist-warn">⚠ ${sh.warnings.map(esc).join(' · ')}</div>` : '';
 

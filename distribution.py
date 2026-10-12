@@ -38,7 +38,7 @@ from config import (
     DISTRIBUTION_SHEET_NAMES,
     DISTRIBUTION_SHEET_URLS,
 )
-from engine import normalize_id, parse_sheet_date
+from engine import find_roster_header_grid, normalize_id, parse_sheet_date
 from sheets_client import make_drive_service, make_readonly_service, parse_sheet_url
 
 MONTHS = {m: i + 1 for i, m in enumerate("JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC".split())}
@@ -641,6 +641,38 @@ def parse_day(values, colors, phones=None):
     return out
 
 
+def roster_crew(values, day, phones=None):
+    """Foreman / Trực đội / Dock planner for `day`, read from a monthly-roster 1st sheet.
+
+    Such a sheet has no 'FOREMAN: name' labels; instead each person's cell for the day holds a
+    code - TĐ, PPC or FM (DISTRIBUTION_ROLE_MARKERS), alone or with a shift/aircraft such as
+    'TĐ-SAG', 'TĐ @16:00', 'A326-FM'. Returns {'truc_doi': [{'name', 'id', 'phone', 'note'}, ...], ...};
+    {} when the sheet isn't a roster or has no column for that day.
+    """
+    phones = phones or {}
+    try:
+        header_row, id_col, name_col, date_cols = find_roster_header_grid(values)
+    except ValueError:
+        return {}
+    col = next((c for d, c in date_cols.items() if (d.date() if isinstance(d, datetime) else d) == day), None)
+    if col is None:
+        return {}
+    wanted = {key: fold(marker) for key, marker in DISTRIBUTION_ROLE_MARKERS.items() if fold(marker)}
+    out = {}
+    for r in range(header_row + 1, len(values)):
+        row = values[r]
+        cell = text(row[col]) if col < len(row) else ""
+        name = text(row[name_col]) if name_col < len(row) else ""
+        if not cell or not name:
+            continue
+        tokens = set(re.split(r"[^a-z0-9]+", fold(cell)))
+        rid = normalize_id(text(row[id_col])) if id_col < len(row) else ""
+        for key, token in wanted.items():
+            if token in tokens:
+                out.setdefault(key, []).append({"name": name, "id": rid, "phone": phones.get(rid, ""), "note": cell})
+    return out
+
+
 def build_day(index, tab, force=False):
     meta = meta_for(index, force)
     if meta.get("error"):
@@ -649,13 +681,18 @@ def build_day(index, tab, force=False):
     if not day:
         raise ValueError(f"Tab '{tab}' is not a day tab of this spreadsheet.")
     src = _source(index)  # meta_for(force) above has just refreshed it when force is set
-    _, phones, _ = parse_info(_first_sheet_values(index, force, src))
+    first_values = _first_sheet_values(index, force, src)
+    _, phones, _ = parse_info(first_values)
     values, colors = _grid(index, tab, force, src)
+    sections = parse_day(values, colors, phones)
+    # Phones for the crew: the 1st sheet's phone book first, then whatever the day tab lists.
+    day_phones = {p["id"]: p["phone"] for s in sections for p in s["people"] if p["id"] and p["phone"]}
     return {
         "index": index,
         "tab": tab,
         "date": day["date"],
         "ac": day["ac"] or meta["ac"],  # each day tab names its own aircraft (A611-OCT06, A326-OCT09 ...)
         "check": day.get("note", ""),  # e.g. 'WO COMP' from 'WO COMP A611-OCT07'
-        "sections": parse_day(values, colors, phones),
+        "crew": roster_crew(first_values, date.fromisoformat(day["date"]), {**day_phones, **phones}),
+        "sections": sections,
     }

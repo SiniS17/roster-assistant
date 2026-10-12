@@ -105,6 +105,12 @@ which zone on a chosen day. It never writes to them.
   `FOREMAN`, `TRỰC ĐỘI`, `DOCK PLANNER`, `SHIFT / TECH SUPP` (name, then phone
   next to it or below it), plus any rows that hold an employee ID and a phone
   number - that is the phone book used for the PHONE column.
+- **If the 1st sheet is a monthly roster** (header row with `ID` + `NAME`, one date
+  column per day) the crew header is read from it for the selected day: anyone whose
+  cell holds `TĐ` (Trực đội), `PPC` (Dock planner) or `FM` (Foreman) - alone or with
+  a shift/aircraft, like `TĐ-SAG`, `TĐ @16:00`, `A326-FM`. Several people can share
+  a role. These roster codes win over the `FOREMAN:`-style labels; the codes come
+  from `DISTRIBUTION_ROLE_MARKERS` in `config.py`.
 - **Every other sheet** - one day, named `<A/C>-<MMM><DD>` (e.g. `B218-SEP21`).
   A zero-padded day is fine (`A326-OCT09`, `A326-OCT011` = Oct 11). Text before the
   aircraft is kept as the day's CHECK (`WO COMP A611-OCT07` -> A/C `A611`, CHECK
