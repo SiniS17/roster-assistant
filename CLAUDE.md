@@ -26,3 +26,4 @@ Daily Distribution page. Full behaviour of the KHDT flow is in `HOW_IT_WORKS.md`
 - Daily Distribution page (`templates/index.html`, `paintDay`): zones and shops with people are listed first,
   empty ones (UNASSIGNED / "No personnel assigned") sink to the bottom. Stable sort, so the default order
   (sheet order for zones, `SHOPS` order for shops) is kept within each group.
+- When a tab has no zones, the shops column takes the full width and the "No zones found on this tab." card is shown last (`.dist-cols.solo`).
