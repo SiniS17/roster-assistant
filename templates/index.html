@@ -578,7 +578,10 @@ function peopleTable(people){
 }
 
 function paintDay(sh, day){
-  const zones = day.sections.filter(s => s.kind === 'zone');
+  // Zones/shops with people come first; empty ones sink to the bottom. The sort is stable, so each
+  // group keeps its original order (sheet order for zones, the SHOPS list order for shops).
+  const filled = x => (x.people.length ? 0 : 1);
+  const zones = day.sections.filter(s => s.kind === 'zone').sort((x, y) => filled(x) - filled(y));
   const others = day.sections.filter(s => s.kind !== 'zone');
   const zoneHtml = zones.map(z => {
     const h = z.time ? parseInt(z.time, 10) : null;
@@ -587,14 +590,15 @@ function paintDay(sh, day){
       (z.people.length ? peopleTable(z.people) : `<div class="empty">No personnel assigned.</div>`) + '</section>';
   }).join('') || '<section class="dcard"><div class="empty">No zones found on this tab.</div></section>';
 
-  const used = new Set();
   const shop = (title, sec) => {
-    if(sec) used.add(sec);
     return `<section class="dcard shop"><header>${IC.tool}<span>${esc(title)}</span><span class="tag">${sec && sec.people.length ? sec.people.length + ' ASSIGNED' : 'UNASSIGNED'}</span></header>` +
       (sec && sec.people.length ? peopleTable(sec.people) : `<div class="empty">${IC.users}No personnel assigned for this shift.</div>`) + '</section>';
   };
-  let shopHtml = SHOPS.map(t => shop(t, others.find(o => fold(o.title) === fold(t)))).join('');
-  shopHtml += others.filter(o => !used.has(o) && o.people.length).map(o => shop(o.title, o)).join('');
+  const shops = SHOPS.map(t => ({title: t, sec: others.find(o => fold(o.title) === fold(t))}));
+  const matched = new Set(shops.map(x => x.sec).filter(Boolean));
+  shops.push(...others.filter(o => !matched.has(o) && o.people.length).map(o => ({title: o.title, sec: o})));
+  shops.sort((x, y) => (x.sec && x.sec.people.length ? 0 : 1) - (y.sec && y.sec.people.length ? 0 : 1));
+  const shopHtml = shops.map(x => shop(x.title, x.sec)).join('');
 
   // Crew for this day: the TĐ / PPC / FM codes in the roster's column for the day win; otherwise the
   // FOREMAN / TRỰC ĐỘI / ... labels on the spreadsheet's 1st sheet.
