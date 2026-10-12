@@ -34,3 +34,4 @@ Daily Distribution page. Full behaviour of the KHDT flow is in `HOW_IT_WORKS.md`
   Combined titles are understood by regex over the folded section title (any section kind, `@16H00` stripped):
   `128/567`, `34/567`, `34567` (= 34 + 567), `12834567`, `128 + AVI`; `ALL ZONES` = 128 + 34 + 567 + AVI only (not the shops).
   Only sections that have people count as covering a zone. Digits are matched only as 128 / 567 / 34, so a lone `3` or `5` is ignored.
+- Shops (STRUCTURE ... / CABIN) with nobody assigned are no longer drawn as cards (`shopsShown` in `paintDay`); the unstaffed-zones notice names them instead. Empty zone cards ("No personnel assigned.") are still drawn.
