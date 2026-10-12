@@ -26,6 +26,7 @@ import re
 import threading
 import time
 import unicodedata
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 
@@ -281,10 +282,31 @@ def _first_sheet_values(index, force=False, src=None):
 
 
 # -------------------------------------------------------------- tab names
+def roster_header_month(values):
+    """First day of the month whose dates fill the roster's header row ('1-Oct' ... '31-Oct'), or None.
+    The most common (year, month) among the date columns wins; a stray cell such as a plain '1'
+    (which reads as a 1899 serial date) is ignored."""
+    try:
+        _, _, _, date_cols = find_roster_header_grid(values)
+    except ValueError:
+        return None
+    days = [d.date() if isinstance(d, datetime) else d for d in date_cols]
+    counts = Counter((d.year, d.month) for d in days if d.year >= 2000)
+    if not counts:
+        return None
+    year, month = counts.most_common(1)[0][0]
+    return date(year, month, 1)
+
+
 def roster_month(first_title, values, ref=None):
     """First day of the month the 1st sheet is a roster for, or None.
-    Read from text such as 'ROSTER ĐỘI 3 THÁNG 10.2026' in its top rows, else from its
-    tab name ('Doi 3 Thang 10'); without a year in the text the year nearest `ref`/today is used."""
+    Read first from the roster's own date header row (the dates the sheet really covers - its
+    tab name can say 'SEP' while the columns are October); else from text such as
+    'ROSTER ĐỘI 3 THÁNG 10.2026' in its top rows or its tab name ('Doi 3 Thang 10'); without a
+    year in the text the year nearest `ref`/today is used."""
+    header_month = roster_header_month(values)
+    if header_month:
+        return header_month
     texts = [first_title or ""] + [v for row in values[:15] for v in row if isinstance(v, str)]
     month_only = None
     for t in texts:
