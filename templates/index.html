@@ -626,8 +626,9 @@ function paintDay(sh, day){
   const shops = SHOPS.map(t => ({title: t, sec: others.find(o => fold(o.title) === fold(t))}));
   const matched = new Set(shops.map(x => x.sec).filter(Boolean));
   shops.push(...others.filter(o => !matched.has(o) && o.people.length).map(o => ({title: o.title, sec: o})));
-  shops.sort((x, y) => (x.sec && x.sec.people.length ? 0 : 1) - (y.sec && y.sec.people.length ? 0 : 1));
-  const shopHtml = shops.map(x => shop(x.title, x.sec)).join('');
+  // Empty shops are not drawn: the "These zone(s) have no assigned staff" notice already names them.
+  const shopsShown = shops.filter(x => x.sec && x.sec.people.length);
+  const shopHtml = shopsShown.map(x => shop(x.title, x.sec)).join('');
 
   // Crew for this day: the TĐ / PPC / FM codes in the roster's column for the day win; otherwise the
   // FOREMAN / TRỰC ĐỘI / ... labels on the spreadsheet's 1st sheet.
