@@ -456,6 +456,31 @@ function setView(v){
 /* ---------- Daily Distribution ---------- */
 const DIST = { meta:null, sheet:0, tab:null, days:new Map(), req:0 };
 const SHOPS = ['STRUCTURE SHEET METAL','STRUCTURE COMPOSITE','STRUCTURE PAINTING','CABIN'];
+// The fixed zones/shops every day should have staff in, in display order.
+const FIXED_ZONES = ['128','567','34','AVI','STRUCTURE SHEET METAL','STRUCTURE COMPOSITE','STRUCTURE PAINTING','CABIN'];
+// Which fixed zones a section title covers. Titles can combine zones: '128/567', '34/567', '34567',
+// '128 + AVI', 'ZONE 128 @16H00', and 'ALL ZONES' (= 128 + 34 + 567 + AVI only, not the shops).
+function zonesInTitle(title){
+  const t = fold(title).replace(/@\s*\d{1,2}\s*[h:]\s*\d{2}/g, ' ');   // drop '@16H00'
+  const out = new Set();
+  for(const m of t.matchAll(/all\s*zones?|\bavi\b|128|567|34|sheet\s*metal|composite|paint|cabin/g)){
+    const k = m[0];
+    if(k.startsWith('all')) ['128','34','567','AVI'].forEach(z => out.add(z));
+    else if(k === 'avi') out.add('AVI');
+    else if(/^\d/.test(k)) out.add(k);
+    else if(k.startsWith('sheet')) out.add('STRUCTURE SHEET METAL');
+    else if(k === 'composite') out.add('STRUCTURE COMPOSITE');
+    else if(k === 'paint') out.add('STRUCTURE PAINTING');
+    else if(k === 'cabin') out.add('CABIN');
+  }
+  return out;
+}
+// Fixed zones with nobody assigned (missing from the tab, or listed with an empty table).
+function unstaffedZones(sections){
+  const covered = new Set();
+  sections.filter(s => s.people.length).forEach(s => zonesInTitle(s.title).forEach(z => covered.add(z)));
+  return FIXED_ZONES.filter(z => !covered.has(z));
+}
 const CREW = [['foreman','FOREMAN'],['truc_doi','TRỰC ĐỘI'],['dock_planner','DOCK PLANNER'],['shift_tech','SHIFT / TECH SUPP']];
 const MON_UP = MON.map(m => m.toUpperCase());
 const pad2 = n => String(n).padStart(2, '0');
@@ -590,7 +615,9 @@ function paintDay(sh, day){
     return `<section class="dcard ${cls}"><header>${ico}<span>${esc(z.title)}</span></header>` +
       (z.people.length ? peopleTable(z.people) : `<div class="empty">No personnel assigned.</div>`) + '</section>';
   }).join('');
-  const noZones = '<section class="dcard"><div class="empty">No zones found on this tab.</div></section>';
+  // Fixed zones nobody is assigned to (absent from the tab or empty), also when zones are combined ('34567', 'ALL ZONES' ...).
+  const missing = unstaffedZones(day.sections);
+  const noZones = missing.length ? '<section class="dcard"><div class="empty">These zone(s) have no assigned staff: ' + missing.map(esc).join(', ') + '</div></section>' : '';
 
   const shop = (title, sec) => {
     return `<section class="dcard shop"><header>${IC.tool}<span>${esc(title)}</span><span class="tag">${sec && sec.people.length ? sec.people.length + ' ASSIGNED' : 'UNASSIGNED'}</span></header>` +
@@ -620,8 +647,8 @@ function paintDay(sh, day){
     `<div class="dist-meta">A/C: <b>${esc(day.ac || sh.ac || '–')}</b><i>•</i>CHECK: <b>${esc(day.check || sh.check || '–')}</b><i>•</i>DATE: <b>${esc(range)}</b></div></div>` +
     `<div class="crew">${crew}</div></div>` +
     (zones.length
-      ? `<div class="dist-cols"><div class="dist-col">${zoneHtml}</div><div class="dist-col">${shopHtml}</div></div>`
-      // No zones on this tab: the shops take the full width and the "no zones" notice goes last.
+      ? `<div class="dist-cols"><div class="dist-col">${zoneHtml}</div><div class="dist-col">${shopHtml}${noZones}</div></div>`
+      // No zones on this tab: the shops take the full width. The unstaffed-zones notice goes last either way.
       : `<div class="dist-cols solo"><div class="dist-col">${shopHtml}${noZones}</div></div>`) + `${warn}</div>`;
 }
 
