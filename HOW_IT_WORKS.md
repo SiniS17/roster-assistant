@@ -106,7 +106,12 @@ which zone on a chosen day. It never writes to them.
   next to it or below it), plus any rows that hold an employee ID and a phone
   number - that is the phone book used for the PHONE column.
 - **Every other sheet** - one day, named `<A/C>-<MMM><DD>` (e.g. `B218-SEP21`).
-  It holds `ORD / NAME AND SURNAME / ID / POSITION / REMARK` tables split by
+  A zero-padded day is fine (`A326-OCT09`, `A326-OCT011` = Oct 11). Text before the
+  aircraft is kept as the day's CHECK (`WO COMP A611-OCT07` -> A/C `A611`, CHECK
+  `WO COMP`). A tab named only with a number (`1`, `14`) is that day of the month
+  the 1st sheet is a roster for (read from `THÁNG 10.2026` in its top rows, or from
+  a tab name like `Doi 3 Thang 10`). The A/C shown is the one in each day's own tab
+  name. It holds `ORD / NAME AND SURNAME / ID / POSITION / REMARK` tables split by
   section rows (`ZONE 128`, `ZONE 128 @16H00`, `ZONE AVI`, `STRUCTURE PAINTING`...).
   `ZONE ...` sections fill the left column (`@16H00`-style ones get a sun/moon
   icon); the right column always lists Structure Sheet Metal / Composite /

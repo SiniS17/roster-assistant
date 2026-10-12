@@ -600,7 +600,7 @@ function paintDay(sh, day){
   const warn = (sh.warnings || []).length ? `<div class="dist-warn">⚠ ${sh.warnings.map(esc).join(' · ')}</div>` : '';
 
   $('wrap').innerHTML = `<div class="dist"><div class="dist-head"><div><h1 class="dist-date">${fmtHeading(day.date)}</h1>` +
-    `<div class="dist-meta">A/C: <b>${esc(sh.ac || '–')}</b><i>•</i>CHECK: <b>${esc(sh.check || '–')}</b><i>•</i>DATE: <b>${esc(range)}</b></div></div>` +
+    `<div class="dist-meta">A/C: <b>${esc(day.ac || sh.ac || '–')}</b><i>•</i>CHECK: <b>${esc(day.check || sh.check || '–')}</b><i>•</i>DATE: <b>${esc(range)}</b></div></div>` +
     `<div class="crew">${crew}</div></div>` +
     `<div class="dist-cols"><div class="dist-col">${zoneHtml}</div><div class="dist-col">${shopHtml}</div></div>${warn}</div>`;
 }

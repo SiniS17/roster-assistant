@@ -42,7 +42,11 @@ from engine import normalize_id, parse_sheet_date
 from sheets_client import make_drive_service, make_readonly_service, parse_sheet_url
 
 MONTHS = {m: i + 1 for i, m in enumerate("JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC".split())}
-TAB_RE = re.compile(r"^\s*(?P<ac>.*?)[\s_\-]*(?P<mon>[A-Za-z]{3})[\s_\-]*(?P<day>\d{1,2})\s*$")
+# '0*' lets zero-padded days through: 'A326-OCT09', 'A326-OCT010' and 'A326-OCT011' are Oct 9, 10 and 11.
+TAB_RE = re.compile(r"^\s*(?P<ac>.*?)[\s_\-]*(?P<mon>[A-Za-z]{3})[\s_\-]*0*(?P<day>\d{1,2})\s*$")
+NUM_TAB_RE = re.compile(r"^\s*0*(?P<day>\d{1,2})\s*$")  # a tab named just '1' ... '31'
+AC_NOTE_RE = re.compile(r"^(?P<note>.+?)\s+(?P<ac>[A-Za-z]{1,3}\d{2,4})$")  # 'WO COMP A611'
+MONTH_TEXT_RE = re.compile(r"\b(?:thang|month)\s*(\d{1,2})(?:\s*[./\-]\s*(\d{4}))?")
 ID_RE = re.compile(r"^[A-Z]{2,5}\d{3,}$")
 TIME_RE = re.compile(r"@\s*(\d{1,2})\s*[hH:]\s*(\d{2})")
 
@@ -277,13 +281,50 @@ def _first_sheet_values(index, force=False, src=None):
 
 
 # -------------------------------------------------------------- tab names
-def parse_tab_name(title, ref=None):
-    """'B218-SEP21' -> ('B218', date(2026, 9, 21)); None when it isn't a day tab."""
+def roster_month(first_title, values, ref=None):
+    """First day of the month the 1st sheet is a roster for, or None.
+    Read from text such as 'ROSTER ĐỘI 3 THÁNG 10.2026' in its top rows, else from its
+    tab name ('Doi 3 Thang 10'); without a year in the text the year nearest `ref`/today is used."""
+    texts = [first_title or ""] + [v for row in values[:15] for v in row if isinstance(v, str)]
+    month_only = None
+    for t in texts:
+        m = MONTH_TEXT_RE.search(fold(t))
+        if not m or not 1 <= int(m.group(1)) <= 12:
+            continue
+        if m.group(2):
+            return date(int(m.group(2)), int(m.group(1)), 1)
+        month_only = month_only or int(m.group(1))
+    if not month_only:
+        return None
+    ref = ref or date.today()
+    year = min((ref.year - 1, ref.year, ref.year + 1), key=lambda y: abs((date(y, month_only, 1) - ref).days))
+    return date(year, month_only, 1)
+
+
+def split_ac_note(name):
+    """'WO COMP A611' -> ('A611', 'WO COMP'); 'A326' -> ('A326', '')."""
+    name = (name or "").strip()
+    m = AC_NOTE_RE.match(name)
+    return (m.group("ac"), m.group("note").strip(" -_")) if m else (name, "")
+
+
+def parse_tab_name(title, ref=None, month_ref=None):
+    """'B218-SEP21' -> ('B218', date(2026, 9, 21)); 'A326-OCT011' -> ('A326', date(2026, 10, 11)).
+    A tab named only with a number ('1') is that day of `month_ref`'s month: ('', date(2026, 10, 1)).
+    None when it isn't a day tab."""
+    ref = ref or date.today()
+    num = NUM_TAB_RE.match(title or "")
+    if num:
+        if not month_ref:
+            return None
+        try:
+            return "", date(month_ref.year, month_ref.month, int(num.group("day")))
+        except ValueError:
+            return None
     m = TAB_RE.match(title or "")
     if not m or m.group("mon").upper() not in MONTHS:
         return None
     month, day = MONTHS[m.group("mon").upper()], int(m.group("day"))
-    ref = ref or date.today()
     best = None
     for year in (ref.year - 1, ref.year, ref.year + 1):
         try:
@@ -446,25 +487,31 @@ def _meta_for(index, force=False):
         tabs = src.tabs()
         if not tabs:
             raise ValueError("The spreadsheet has no visible sheets.")
-        info, phones, warnings = parse_info(_first_sheet_values(index, force, src))
+        first_values = _first_sheet_values(index, force, src)
+        info, phones, warnings = parse_info(first_values)
         out["warnings"] = warnings
         out["people"] = info["people"]
         out["check"] = info["check"]
         out["ac"] = info["ac"]
         out["date_text"] = info["date_text"]
-        ref = info["date_from"] or date.today()
+        # Month of a monthly-roster 1st sheet ('Doi 3 Thang 10'): used for tabs named only '1'...'31'.
+        month_ref = roster_month(tabs[0], first_values, info["date_from"])
+        ref = month_ref or info["date_from"] or date.today()
         out["date_from"] = info["date_from"].isoformat() if info["date_from"] else None
         out["date_to"] = info["date_to"].isoformat() if info["date_to"] else None
 
         days = []
         for tab in tabs[1:]:
-            parsed = parse_tab_name(tab, ref)
+            parsed = parse_tab_name(tab, ref, month_ref)
             if parsed:
-                days.append({"tab": tab, "ac": parsed[0], "date": parsed[1].isoformat()})
+                ac, note = split_ac_note(parsed[0])
+                days.append({"tab": tab, "ac": ac, "note": note, "date": parsed[1].isoformat()})
         days.sort(key=lambda d: d["date"])
         out["days"] = days
         if not out["ac"] and days:
-            out["ac"] = days[0]["ac"]
+            out["ac"] = next((d["ac"] for d in days if d["ac"]), "")
+            if out["ac"]:  # the tab names supply it, so the "not found" warning is just noise
+                out["warnings"] = [w for w in out["warnings"] if not w.startswith("A/C")]
         if not out["ac"]:
             out["ac"] = src.title
         if not out["date_from"] and days:
@@ -608,6 +655,7 @@ def build_day(index, tab, force=False):
         "index": index,
         "tab": tab,
         "date": day["date"],
-        "ac": day["ac"] or meta["ac"],
+        "ac": day["ac"] or meta["ac"],  # each day tab names its own aircraft (A611-OCT06, A326-OCT09 ...)
+        "check": day.get("note", ""),  # e.g. 'WO COMP' from 'WO COMP A611-OCT07'
         "sections": parse_day(values, colors, phones),
     }
