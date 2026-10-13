@@ -393,35 +393,106 @@ def load_khdt(file_obj_or_path):
 # Both are 0-indexed here (unlike the openpyxl version, which was 1-indexed).
 
 
-def find_roster_header_grid(values, lenient=False):
-    """Locate the header row (has 'ID' + 'NAME' columns) and day-columns.
+# Header labels (accent-folded, lower-case) accepted for the roster's ID / NAME columns.
+# Squad 1/4 sheets use Vietnamese headers ("HỌ VÀ TÊN", "MÃ VAECO"); the others use "NAME AND SURNAME" / "ID".
+ID_HEADER_ALIASES = {"id", "ma vaeco", "vaeco", "vaeco id", "ma nv", "ma nhan vien", "ma so", "ma so nv",
+                     "employee id", "staff id", "emp id", "badge", "so the"}
+NAME_HEADER_ALIASES = {"name", "ho va ten", "ho ten", "ho & ten", "ten", "ten nhan vien", "full name",
+                       "employee name", "staff name", "name and surname", "name & surname"}
 
-    lenient=True (the read-only squad rosters): when the row has an 'ID' column and dates but no
-    readable NAME header - Squad 1's sits under the VAECO logo - the column just left of ID is the name."""
+
+def _header_kind(value):
+    """'id', 'name' or None for a header cell. Tolerant of accents, case, extra spaces and punctuation."""
+    if not isinstance(value, str):
+        return None
+    norm = re.sub(r"[^\w&\s]", " ", normalize_name(value).replace("\u0111", "d"))
+    norm = re.sub(r"\s+", " ", norm).strip()
+    if not norm:
+        return None
+    if norm in ID_HEADER_ALIASES or norm.endswith(" id") or norm.startswith("ma vaeco"):
+        return "id"
+    if norm in NAME_HEADER_ALIASES or (("name" in norm and "surname" in norm)):
+        return "name"
+    return None
+
+
+def _day_number(v):
+    """1..31 if the cell is a bare day-of-month ('01', 1, 1.0), else None."""
+    if isinstance(v, bool) or v is None:
+        return None
+    if isinstance(v, (int, float)):
+        return int(v) if float(v).is_integer() and 1 <= v <= 31 else None
+    if isinstance(v, str) and re.fullmatch(r"\s*0?\d{1,2}\s*", v):
+        n = int(v)
+        return n if 1 <= n <= 31 else None
+    return None
+
+
+def _guess_name_col(values, header_row, id_col):
+    """No readable NAME header: the nearest column left of ID whose cells below are mostly text."""
+    for c in range(id_col - 1, -1, -1):
+        texts = total = 0
+        for r in range(header_row + 1, min(len(values), header_row + 40)):
+            row = values[r]
+            v = row[c] if c < len(row) else None
+            if v in (None, ""):
+                continue
+            total += 1
+            if isinstance(v, str) and not v.strip().isdigit() and len(v.strip()) > 2:
+                texts += 1
+        if total and texts / total >= 0.6:
+            return c
+    return id_col - 1 if id_col > 0 else None
+
+
+def find_roster_header_grid(values, lenient=False, default_month=None):
+    """Locate the header row (an ID column + a NAME column + one column per day).
+
+    ID / NAME headers are matched by alias, ignoring accents and case ("ID", "MÃ VAECO", "VAECO ID",
+    "HỌ VÀ TÊN", "NAME AND SURNAME" ...). Day columns are real dates, or - when the header only holds
+    bare day numbers (01 ... 31) - those days in `default_month` (a date in the month; default: this month).
+
+    lenient=True (the read-only squad rosters): an ID column with dates but no readable NAME header
+    (e.g. hidden under a logo) falls back to the nearest text column left of ID.
+    """
     max_scan = min(len(values), 30)
     for r in range(max_scan):
         row = values[r]
-        id_col = None
-        name_col = None
+        id_col = name_col = None
         for c, v in enumerate(row):
-            if not isinstance(v, str):
-                continue
-            norm = normalize_name(v)
-            if norm == "id":
+            kind = _header_kind(v)
+            if kind == "id" and id_col is None:
                 id_col = c
-            elif ("name" in norm and "surname" in norm) or norm == "name":
+            elif kind == "name" and name_col is None:
                 name_col = c
-        if lenient and id_col is not None and name_col is None and id_col > 0:
-            name_col = id_col - 1
-        if id_col is not None and name_col is not None:
-            date_cols = {}
+        if id_col is None:
+            continue
+        if name_col is None and lenient:
+            name_col = _guess_name_col(values, r, id_col)
+        if name_col is None:
+            continue
+
+        date_cols = {}
+        for c, v in enumerate(row):
+            d = parse_sheet_date(v)
+            if d is not None and d.year >= 2000:
+                date_cols[d] = c
+        if not date_cols:
+            base = default_month or date.today()
             for c, v in enumerate(row):
-                d = parse_sheet_date(v)
-                if d is not None:
-                    date_cols[d] = c
-            if date_cols:
-                return r, id_col, name_col, date_cols
-    raise ValueError("Could not find the Roster header row (looked for 'ID' + 'NAME' columns plus date columns).")
+                n = _day_number(v)
+                if n is None or c in (id_col, name_col):
+                    continue
+                try:
+                    date_cols[date(base.year, base.month, n)] = c
+                except ValueError:
+                    pass  # e.g. 31 in a 30-day month
+            if len(date_cols) < 5:  # a few stray small numbers are not a day header
+                date_cols = {}
+        if date_cols:
+            return r, id_col, name_col, date_cols
+    raise ValueError("Could not find the Roster header row (looked for 'ID' / 'MÃ VAECO' + 'NAME' / 'HỌ VÀ TÊN' "
+                     "columns plus date or day-number columns in the first 30 rows).")
 
 
 def mark_roster_grid(khdt_rows, values, colors, force=False, log=print, event_log=None):
