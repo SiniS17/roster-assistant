@@ -1,7 +1,7 @@
 # CLAUDE.md — roster-assistant handover
 
 Repo: https://github.com/SiniS17/roster-assistant.git (internal VAECO tool, Flask + Google Sheets)
-Last updated: 2026-10-13 (session 3: roster page now built from the 4 squads' sheets)
+Last updated: 2026-10-13 (session 4: Squad 1/2/4 roster read errors fixed)
 
 ## Working agreement
 - Owner wants a CLAUDE.md (or equivalent handover) updated after every task.
@@ -27,7 +27,7 @@ Full plain-language behaviour (marker rules, N/red-N handling, date-swap bug): `
 | `config.py` | Sheet URLs, course abbreviations, log labels, `MARKER_PREFIX` |
 | `templates/index.html` | Single-page UI (roster, distribution, KHDT dialog; all JS inline, ~640 lines) |
 | `templates/result.html`, `static/style.css` | Legacy plain form-post result page |
-| `tests/test_distribution.py`, `tests/test_squad_roster.py` | Parser tests (squad 1/4 and 2/3 layouts) and the combined-roster tests; fake Google source, no network |
+| `tests/test_distribution.py`, `tests/test_squad_roster.py`, `tests/test_header_detection.py` | Parser tests (squad 1/4 and 2/3 layouts), the combined-roster tests and roster-header / HTTP-limit tests; fake Google source, no network |
 
 ## Key behaviours to remember
 - KHDT dates are `YYYY-DD-MM` (day/month swapped); `parse_khdt_date` un-swaps real Excel dates. Slash text is read as normal DD/MM/YYYY.
@@ -38,6 +38,8 @@ Full plain-language behaviour (marker rules, N/red-N handling, date-swap bug): `
 - Squad names/roles come from `config.py`: `DISTRIBUTION_SHEET_NAMES` (by position: 1st URL = Squad 1 ... last = Squad 4) and `DISTRIBUTION_ROLE_MARKERS` (Trực đội=`TĐ`, Dock planner=`ppc`, Foreman=`fm`).
 - Crew header precedence per role: labels on the day tab > `TĐ`/`PPC`/`FM` codes in the roster's column for that day > labels on the 1st sheet.
 - Roster page reads only the squads' 1st sheets (view-only scope). `find_roster_header_grid(values, lenient=True)` falls back to "name = column left of ID" when the NAME header is unreadable (Squad 1's is under the logo). `DEFAULT_ROSTER_SHEET_URL` is now used by the KHDT upload only.
+- Roster header detection (`engine.find_roster_header_grid`): ID/NAME columns are matched by alias, accent- and case-insensitive (`ID_HEADER_ALIASES` / `NAME_HEADER_ALIASES`: `ID`, `MÃ VAECO`, `VAECO ID`, `HỌ VÀ TÊN`, `NAME AND SURNAME` ...). Day columns are real dates, or bare day numbers `01`..`31` placed in `default_month` (default: the current month, so check the month if a squad's header has no real dates). If lenient and the NAME header is unreadable, the nearest text column left of ID is used (skips blank spacer columns).
+- Google clients are built in `sheets_client._build` with a relaxed httplib2 decode limit. httplib2 >= 0.32 rejects gzip responses that expand > 100x (`DecodeRatioError: Amplification ratio 232.8 ...`); a big sheet full of formatted empty cells (Squad 2: 63 KB -> 14.7 MB) is legitimately that compressible. Ratio check is off (`DECODE_LIMIT_RATIO = 0`), hard cap 512 MB stays.
 - Reload really reloads: `/api/distribution/day?refresh=1` skips the 60 s cache; the page keeps a day for 60 s only.
 - Course label comes from `COURSE_ABBREVIATIONS` (class-code prefix) or `COURSE_NAME_ABBREVIATIONS` (full name); otherwise auto-abbreviated, `?` if nothing found.
 
@@ -52,7 +54,6 @@ Full plain-language behaviour (marker rules, N/red-N handling, date-swap bug): `
 - `requirements.txt` lists the same packages twice (duplicates, harmless).
 - `package.json` looks unrelated to this Python app (pnpm workspace boilerplate).
 - Sheet URLs are committed in `config.py` (fine if the repo is private).
-- No tests in the repo.
 
 ## Sheet formats (Daily Distribution)
 - **Squad 2/3**: day tabs named `B218-SEP21`; one table per section, headers `ORD / NAME AND SURNAME / ID / POSITION / REMARK`, sections titled `ZONE 128`, `ZONE AVI`, `STRUCTURE PAINTING`...
@@ -72,5 +73,11 @@ Full plain-language behaviour (marker rules, N/red-N handling, date-swap bug): `
   - `tests/test_distribution.py`: `python tests/test_distribution.py`.
 - Session 3 DONE (tested on mock squads and in a headless browser, **not yet verified against the live sheets**): roster page built from the 4 squads' 1st sheets instead of the KHDT sheet (`squad_roster.py`, `/api/roster` default path). KHDT→Roster is unchanged and still writes to the old sheet's `temp` tab; its preview is the old `/api/roster?url=&gid=` path with a "Back to the squads' roster" button.
   - Known limits: if squads cover different months the table shows the union of dates (blanks where a squad has none); an employee in two squads shows once, in the first; the KHDT temp workaround is still to do (decide where `temp` lives now that Main is gone from the page, e.g. a tab in each squad's sheet needs Editor access).
+- Session 4 DONE (tests pass on mock grids copied from the live sheets' header rows; **not yet run against the live sheets with credentials**): fixed the 3 unreadable squads from the roster page.
+  - Squad 1 and 4: `Could not find the Roster header row` - their header is `STT | HỌ VÀ TÊN | MÃ VAECO` + day numbers, not `ID`/`NAME`. Fixed by header aliases + day-number columns (see Key behaviours).
+  - Squad 2: `DecodeRatioError` came from httplib2's new gzip ratio guard, not from the sheet. Fixed in `sheets_client.py`.
+  - Branch note: CLAUDE.md in this clone already had the session 1-3 notes; no conflicting updates found.
+  - Patch applied on top of `f0fa418` (feature/daily-distribution) with `git am`, clean. All 21 tests pass with httplib2 0.32; `test_http_client_allows_highly_compressed_sheets` needs httplib2 >= 0.32 (`httplib2.decode`) and fails on older versions - requirements.txt doesn't pin it.
+  - To check live: Squad 1/4 months (if the header has no real dates the current month is assumed), and that Squad 2 loads. TECH + QC rows in Squad 1 have no VAECO ID, so they are skipped by the ID filter (as before).
 - Open questions / ideas: if Squad 1's roster header dates are text (hyperlink formulas) instead of real dates, the month falls back to the current month (warning shown) and roster-code crew isn't read - day-tab labels still work. Nothing writes TĐ/ppc/fm into the main roster; they are only read from it.
 - Update this section after each task (owner's standing instruction).
