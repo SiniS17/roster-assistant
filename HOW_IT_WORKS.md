@@ -93,6 +93,28 @@ it with a colleague. See **Setup**, below.
 
 Nothing is ever written to KHDT — it's read-only input.
 
+## Roster page (read-only, built from the 4 squads' spreadsheets)
+
+The main page (`/`) no longer reads the KHDT sheet's Main tab. It is built from the **1st
+sheet of each squad's spreadsheet** - the same four spreadsheets as Daily Distribution
+(`DISTRIBUTION_SHEET_URLS` / `DISTRIBUTION_SHEET_NAMES` in `config.py`) - using view-only
+access (a Viewer share is enough).
+
+- One row per employee; the **Đội** filter picks a squad (Squad 1 ... Squad 4). The day
+  columns are the union of every squad's dates.
+- A squad's 1st sheet needs a header row with `ID` + `NAME` and a real date per day column. If
+  the NAME header can't be read (Squad 1's sits under the logo), the column just left of `ID`
+  is used.
+- Only rows with an employee ID are kept, and a squad's list stops at the `NV TĂNG CƯỜNG`
+  (reinforcement) row, so summary rows and borrowed staff don't appear.
+- Someone listed in two squads is shown once, in the first squad (the page says so).
+- A squad that can't be read is skipped and named in a yellow bar; the other squads still show.
+- The reload button refetches (otherwise a 60 s cache applies). "Open Google Sheet" opens the
+  filtered squad's spreadsheet.
+- **KHDT -> Roster still uses the old sheet** (`DEFAULT_ROSTER_SHEET_URL`: its Main and temp
+  tabs). After a run, the page previews that sheet's temp tab with a "Back to the squads'
+  roster" button. Working around the temp tab is a later task.
+
 ## Daily Distribution page (read-only)
 
 Side menu → **Daily Distribution** (or open `/#distribution`). It reads several
@@ -200,6 +222,7 @@ Edit `config.py`:
 | `engine.py` | All KHDT-parsing and Roster-matching/marking logic |
 | `sheets_client.py` | Google Sheets read/write (service-account auth) |
 | `distribution.py` | Daily Distribution: reads the other spreadsheets, parses info + day tabs |
+| `squad_roster.py` | The roster page: merges the 1st sheet of each squad's spreadsheet |
 | `log_workbook.py` | Builds the downloadable `.xlsx` run log |
 | `config.py` | Abbreviations, log labels, default Sheet URL |
 | `templates/`, `static/` | Upload form + results page |

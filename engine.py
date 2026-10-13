@@ -393,8 +393,11 @@ def load_khdt(file_obj_or_path):
 # Both are 0-indexed here (unlike the openpyxl version, which was 1-indexed).
 
 
-def find_roster_header_grid(values):
-    """Locate the header row (has 'ID' + 'NAME' columns) and day-columns."""
+def find_roster_header_grid(values, lenient=False):
+    """Locate the header row (has 'ID' + 'NAME' columns) and day-columns.
+
+    lenient=True (the read-only squad rosters): when the row has an 'ID' column and dates but no
+    readable NAME header - Squad 1's sits under the VAECO logo - the column just left of ID is the name."""
     max_scan = min(len(values), 30)
     for r in range(max_scan):
         row = values[r]
@@ -408,6 +411,8 @@ def find_roster_header_grid(values):
                 id_col = c
             elif ("name" in norm and "surname" in norm) or norm == "name":
                 name_col = c
+        if lenient and id_col is not None and name_col is None and id_col > 0:
+            name_col = id_col - 1
         if id_col is not None and name_col is not None:
             date_cols = {}
             for c, v in enumerate(row):

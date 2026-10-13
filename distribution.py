@@ -276,6 +276,12 @@ def _grid(index, tab, force=False, src=None):
     return _cached(("grid", src.id, tab), lambda: src.grid(tab), force)
 
 
+def first_sheet_grid(index, force=False, src=None):
+    """(values, colors) of the 1st sheet - the squad's own roster, as the roster page needs it."""
+    src = src or _source(index, force)
+    return _cached(("firstgrid", src.id), lambda: src.grid(src.tabs()[0]), force)
+
+
 def _first_sheet_values(index, force=False, src=None):
     """Values of the 1st sheet only (labels, contacts, phone book) - no colour lookup needed."""
     src = src or _source(index, force)
@@ -288,7 +294,7 @@ def roster_header_month(values):
     The most common (year, month) among the date columns wins; a stray cell such as a plain '1'
     (which reads as a 1899 serial date) is ignored."""
     try:
-        _, _, _, date_cols = find_roster_header_grid(values)
+        _, _, _, date_cols = find_roster_header_grid(values, lenient=True)
     except ValueError:
         return None
     days = [d.date() if isinstance(d, datetime) else d for d in date_cols]
@@ -684,7 +690,7 @@ def roster_crew(values, day, phones=None):
     """
     phones = phones or {}
     try:
-        header_row, id_col, name_col, date_cols = find_roster_header_grid(values)
+        header_row, id_col, name_col, date_cols = find_roster_header_grid(values, lenient=True)
     except ValueError:
         return {}
     col = next((c for d, c in date_cols.items() if (d.date() if isinstance(d, datetime) else d) == day), None)

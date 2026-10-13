@@ -4,7 +4,9 @@ app.py
 Website version of the KHDT -> Roster tool.
 
 GET /            roster page (reads the built-in default Roster Google Sheet)
-GET /api/roster  roster grid as JSON (?url=<sheet url>&gid=<tab id>)
+GET /api/roster  the roster as JSON, built from the 1st sheet of the 4 squads' spreadsheets (view-only).
+                 With ?url=<sheet url>&gid=<tab id> it instead reads that one Google Sheet's tab - the
+                 KHDT sheet with its Main/temp tabs, used to preview a KHDT run's 'temp' tab.
 GET /api/distribution      Daily Distribution: the configured spreadsheets + their day tabs
 GET /api/distribution/day  one day's zones/people (?sheet=<n>&tab=<tab title>)
 POST /run        KHDT upload. Changes go to the 'temp' tab, never straight into 'Main'.
@@ -31,6 +33,7 @@ from engine import load_khdt, mark_roster_grid
 from log_workbook import write_log_workbook
 from roster_view import build_roster_payload, diff_main_temp, find_tab, list_tabs, rebuild_temp, tab_url
 from sheets_client import parse_sheet_url, read_roster_grid, write_roster_updates
+from squad_roster import build_squads_roster
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-change-me")
@@ -47,8 +50,15 @@ def index():
 
 @app.route("/api/roster", methods=["GET"])
 def api_roster():
-    sheet_url = (request.args.get("url") or "").strip() or DEFAULT_ROSTER_SHEET_URL
+    sheet_url = (request.args.get("url") or "").strip()
     gid = (request.args.get("gid") or "").strip()
+    if not sheet_url and not gid:
+        # The main roster: the squads' own spreadsheets, nothing from the KHDT sheet.
+        try:
+            return jsonify(build_squads_roster(force=request.args.get("refresh") == "1"))
+        except Exception as e:
+            return jsonify(ok=False, error=f"{type(e).__name__}: {e}"), 400
+    sheet_url = sheet_url or DEFAULT_ROSTER_SHEET_URL
     try:
         spreadsheet_id, _ = parse_sheet_url(sheet_url)
         tabs = list_tabs(spreadsheet_id)

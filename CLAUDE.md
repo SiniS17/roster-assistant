@@ -1,7 +1,7 @@
 # CLAUDE.md — roster-assistant handover
 
 Repo: https://github.com/SiniS17/roster-assistant.git (internal VAECO tool, Flask + Google Sheets)
-Last updated: 2026-10-13 (session 2: Squad 1/4 daily-distribution support, tests added)
+Last updated: 2026-10-13 (session 3: roster page now built from the 4 squads' sheets)
 
 ## Working agreement
 - Owner wants a CLAUDE.md (or equivalent handover) updated after every task.
@@ -9,7 +9,7 @@ Last updated: 2026-10-13 (session 2: Squad 1/4 daily-distribution support, tests
 
 ## What it does
 1. **KHDT → Roster**: upload the training-plan `.xlsx` (KHDT); matched by Employee ID against the Roster Google Sheet; course markers (e.g. `H ATHK`) are written to a `temp` tab, never straight to `Main`.
-2. **Roster page** (`/`): shows Main/temp tabs, highlights cells that differ in temp.
+2. **Roster page** (`/`): the main roster, built from the **1st sheet of each squad's spreadsheet** (`squad_roster.py`), one table with a squad (Đội) filter. It no longer reads the KHDT sheet's Main tab. The old Main/temp view (`/api/roster?url=&gid=`) is only used to preview a KHDT run's temp tab.
 3. **Daily Distribution** (`/#distribution`): read-only view of other teams' spreadsheets (who is in which zone per day).
 
 Full plain-language behaviour (marker rules, N/red-N handling, date-swap bug): `HOW_IT_WORKS.md`.
@@ -20,13 +20,14 @@ Full plain-language behaviour (marker rules, N/red-N handling, date-swap bug): `
 | `app.py` | Flask routes: `/`, `/api/roster`, `/api/distribution`, `/api/distribution/day`, `POST /run` |
 | `engine.py` | KHDT parsing + roster marking (`load_khdt`, `mark_roster_grid`, markers, date parsing) |
 | `sheets_client.py` | Service-account auth, read grid + font colours, batch write cells |
-| `roster_view.py` | Roster JSON payload, tab listing, `rebuild_temp`, Main-vs-temp diff |
+| `roster_view.py` | Roster JSON payload for one sheet, tab listing, `rebuild_temp`, Main-vs-temp diff (the latter three serve the KHDT temp preview) |
+| `squad_roster.py` | Roster page data: merges the squads' 1st sheets (IDs only, stops at `NV TĂNG CƯỜNG`, dedupes by ID, reports unreadable squads) |
 | `distribution.py` | Reads distribution sheets (Sheets API, Drive fallback for uploaded .xlsx), parses info + day tabs, 60 s cache |
 | `log_workbook.py` | Builds the downloadable `.xlsx` run log |
 | `config.py` | Sheet URLs, course abbreviations, log labels, `MARKER_PREFIX` |
 | `templates/index.html` | Single-page UI (roster, distribution, KHDT dialog; all JS inline, ~640 lines) |
 | `templates/result.html`, `static/style.css` | Legacy plain form-post result page |
-| `tests/test_distribution.py` | Distribution parser tests (squad 1/4 and 2/3 layouts; fake Google source, no network) |
+| `tests/test_distribution.py`, `tests/test_squad_roster.py` | Parser tests (squad 1/4 and 2/3 layouts) and the combined-roster tests; fake Google source, no network |
 
 ## Key behaviours to remember
 - KHDT dates are `YYYY-DD-MM` (day/month swapped); `parse_khdt_date` un-swaps real Excel dates. Slash text is read as normal DD/MM/YYYY.
@@ -36,6 +37,7 @@ Full plain-language behaviour (marker rules, N/red-N handling, date-swap bug): `
 - Distribution parsing is label-based (not fixed cells). Day-tab names: `B218-SEP21`, zero-padded days allowed (`A326-OCT011` = Oct 11), `WO COMP A611-OCT07` (text before the aircraft = CHECK), or just a number (`1`..`31`) = that day of the roster's month.
 - Squad names/roles come from `config.py`: `DISTRIBUTION_SHEET_NAMES` (by position: 1st URL = Squad 1 ... last = Squad 4) and `DISTRIBUTION_ROLE_MARKERS` (Trực đội=`TĐ`, Dock planner=`ppc`, Foreman=`fm`).
 - Crew header precedence per role: labels on the day tab > `TĐ`/`PPC`/`FM` codes in the roster's column for that day > labels on the 1st sheet.
+- Roster page reads only the squads' 1st sheets (view-only scope). `find_roster_header_grid(values, lenient=True)` falls back to "name = column left of ID" when the NAME header is unreadable (Squad 1's is under the logo). `DEFAULT_ROSTER_SHEET_URL` is now used by the KHDT upload only.
 - Reload really reloads: `/api/distribution/day?refresh=1` skips the 60 s cache; the page keeps a day for 60 s only.
 - Course label comes from `COURSE_ABBREVIATIONS` (class-code prefix) or `COURSE_NAME_ABBREVIATIONS` (full name); otherwise auto-abbreviated, `?` if nothing found.
 
@@ -57,7 +59,7 @@ Full plain-language behaviour (marker rules, N/red-N handling, date-swap bug): `
 - **Squad 1/4** (seen in a real A864 screenshot): 1st sheet is `ROSTER`; day tabs are just `1`, `2` ... `20`. Each day tab has an info block (A/C, FOREMAN, CRS C, BCH ĐỘI, TECH SUPPORT, DOCK PLANNER, with PHONE next to each), then in row 6 two tables side by side (left A-F, a divider in G, right H-M), each with `ORD / NAME AND SURNAME / VAECO ID / POSITION / PHONE / REMARK`. Zone titles sit in the row below the header and look like `A864-128`, `A864-34`, `A864-567`, `A864-AVI`. Stray notes can sit in REMARK on rows with no person. A row may have an ID but no name yet.
 
 ## Tests
-`python tests/test_distribution.py` (or `pytest tests`): covers the squad 1/4 layout, the squad 2/3 layout, and numeric tabs.
+`python tests/test_distribution.py` and `python tests/test_squad_roster.py` (or `pytest tests`): squad 1/4 and 2/3 day-tab layouts, numeric tabs, and the combined roster (union of dates, duplicates, reinforcement block, unreadable squad, `/api/roster`).
 
 ## Status / next steps
 - History: an earlier squad 1/4 attempt (commit `cd3d29b`) was reverted (`d626c31`) and its `tests/` folder never reached the repo. The old status text claiming it was done was wrong; it is replaced by the notes below.
@@ -68,5 +70,7 @@ Full plain-language behaviour (marker rules, N/red-N handling, date-swap bug): `
   - Info block on each day tab (A/C, FOREMAN, BCH ĐỘI, TECH SUPPORT, DOCK PLANNER + phones) is now read; `TĐ`/`PPC`/`FM` codes in the roster fill the crew when the day tab has no label.
   - Reload refetches the day tab (was served from a 60 s server cache + a page-lifetime browser cache).
   - `tests/test_distribution.py`: `python tests/test_distribution.py`.
+- Session 3 DONE (tested on mock squads and in a headless browser, **not yet verified against the live sheets**): roster page built from the 4 squads' 1st sheets instead of the KHDT sheet (`squad_roster.py`, `/api/roster` default path). KHDT→Roster is unchanged and still writes to the old sheet's `temp` tab; its preview is the old `/api/roster?url=&gid=` path with a "Back to the squads' roster" button.
+  - Known limits: if squads cover different months the table shows the union of dates (blanks where a squad has none); an employee in two squads shows once, in the first; the KHDT temp workaround is still to do (decide where `temp` lives now that Main is gone from the page, e.g. a tab in each squad's sheet needs Editor access).
 - Open questions / ideas: if Squad 1's roster header dates are text (hyperlink formulas) instead of real dates, the month falls back to the current month (warning shown) and roster-code crew isn't read - day-tab labels still work. Nothing writes TĐ/ppc/fm into the main roster; they are only read from it.
 - Update this section after each task (owner's standing instruction).

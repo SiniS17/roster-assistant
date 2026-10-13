@@ -240,7 +240,7 @@ table.dt{width:100%;min-width:600px;table-layout:fixed;font-size:12.5px}
 <dialog id="khdt">
   <form class="dlg" id="khdtForm">
     <h2>KHDT → Roster</h2>
-    <p>Upload the KHDT training-plan file. Changes are written to the “temp” tab so you can review them — the Main tab is never modified.</p>
+    <p>Upload the KHDT training-plan file. Changes are written to the “temp” tab so you can review them — the Main tab is never modified. The roster page itself shows the four squads’ sheets; after a run, the temp tab opens as a preview with a button to go back.</p>
     <label for="file">KHDT file (.xlsx)</label>
     <input id="file" name="khdt_file" type="file" accept=".xlsx" required>
     <label for="url">Roster Google Sheet URL</label>
@@ -288,7 +288,11 @@ function menu(open){
 $('menuBtn').onclick = () => menu(!$('drawer').classList.contains('on'));
 $('scrim').onclick = () => menu(false);
 document.addEventListener('keydown', e => { if(e.key === 'Escape') menu(false); });
-$('navRoster').onclick = () => { menu(false); if(S.view !== 'roster') setView('roster'); };
+$('navRoster').onclick = () => {
+  menu(false);
+  if(S.view !== 'roster') setView('roster');
+  else if(S.data && S.data.view !== 'squads'){ S.url = ''; S.gid = ''; load(); }   // leave the KHDT-sheet preview
+};
 $('navDist').onclick = () => { menu(false); if(S.view !== 'dist') setView('dist'); };
 $('navKhdt').onclick = () => { menu(false); if(S.view !== 'roster') setView('roster'); $('url').value = S.url || DEFAULT_URL; $('khdt').showModal(); };
 $('closeDlg').onclick = () => $('khdt').close();
@@ -303,14 +307,15 @@ $('zIn').onclick = () => setZoom(S.zoom + .1);
 $('zOut').onclick = () => setZoom(S.zoom - .1);
 $('q').oninput = () => render();
 $('team').onchange = () => { S.team = $('team').value; render(); };
-$('reload').onclick = () => S.view === 'dist' ? loadDist(true) : load();
+$('reload').onclick = () => S.view === 'dist' ? loadDist(true) : load(true);
 
 /* ---------- loading ---------- */
-async function load(){
+async function load(force){
   $('wrap').innerHTML = '<div class="msg">Loading roster…</div>';
   const p = new URLSearchParams();
   if(S.url) p.set('url', S.url);
   if(S.gid !== '') p.set('gid', S.gid);
+  if(force) p.set('refresh', '1');
   try{
     const r = await fetch('/api/roster?' + p);
     const j = await r.json();
@@ -321,8 +326,8 @@ async function load(){
   }catch(e){
     S.data = null; $('stats').innerHTML = ''; $('tabs').innerHTML = '';
     $('wrap').innerHTML = '<div class="msg"><div><b>Couldn\u2019t load the roster</b>' +
-      '<code>' + esc(e.message) + '</code><p>Check that the Sheet is shared with the service account and the Google credentials are set (see HOW_IT_WORKS.md).</p>' +
-      '<button class="btn" onclick="load()">Try again</button></div></div>';
+      '<code>' + esc(e.message) + '</code><p>Check that the squads’ sheets are shared with the service account (Viewer is enough) and the Google credentials are set (see HOW_IT_WORKS.md).</p>' +
+      '<button class="btn" onclick="load(true)">Try again</button></div></div>';
   }
 }
 
@@ -356,6 +361,15 @@ function render(){
     note.innerHTML = `<span><b>temp</b> has ${d.pending} pending change(s) from a KHDT run.</span><button id="seeTemp">Review in temp</button>`;
     $('seeTemp').onclick = () => { S.gid = tempTab.gid; load(); };
   } else note.hidden = true;
+  const legacy = d.view !== 'squads';   // true while previewing the KHDT sheet (Main / temp)
+  if(legacy){
+    if(note.hidden){ note.hidden = false; note.className = 'note'; note.innerHTML = '<span>Showing the KHDT sheet, not the squads\u2019 roster.</span>'; }
+    note.insertAdjacentHTML('beforeend', '<button id="backSquads">Back to the squads\u2019 roster</button>');
+    $('backSquads').onclick = () => { S.url = ''; S.gid = ''; load(); };
+  } else if((d.errors || []).length || (d.warnings || []).length){
+    note.hidden = false; note.className = 'note warn';
+    note.innerHTML = '<span>' + (d.errors || []).map(x => `Couldn\u2019t read <b>${esc(x.name)}</b>: ${esc(x.error)}`).concat((d.warnings || []).map(esc)).join(' · ') + '</span>';
+  }
   $('tabs').querySelectorAll('.tab').forEach(b => b.onclick = () => { S.gid = b.dataset.gid; load(); });
   const first = dates[0], last = dates[dates.length-1];
   $('month').textContent = first.getMonth() === last.getMonth() ? `${MONTHS[first.getMonth()]} ${first.getFullYear()}`
@@ -373,6 +387,10 @@ function render(){
       Object.keys(counts).sort((a,b) => a.localeCompare(b,'vi')).map(t => `<option value="${esc(t)}" ${t===S.team?'selected':''}>${esc(t)} (${counts[t]})</option>`).join('');
     tsel.hidden = false;
   } else { tsel.hidden = true; S.team = ''; }
+  if(!legacy){   // 'Open Google Sheet' opens the filtered squad's spreadsheet (else the first readable one)
+    const srcs = d.sources || [], pick = srcs.find(s => s.name === S.team && !s.error) || srcs.find(s => !s.error);
+    if(pick) $('navSheet').href = pick.url;
+  }
   const q = fold($('q').value.trim());
   const rows = d.employees.filter(e =>
     (!S.team || (teamOf(e) || '(blank)') === S.team) &&

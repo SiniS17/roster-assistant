@@ -1,8 +1,10 @@
 """User-editable labels for roster markers and the Excel log."""
 
 # ------------------------------------------------------------
-# Default Google Sheet (Roster). Pre-fills the web form; users can
-# still paste a different sheet URL for a different team/month.
+# Google Sheet used by the KHDT -> Roster upload only (its Main and temp tabs). Pre-fills the
+# KHDT form; users can still paste a different sheet URL for a different team/month.
+# The roster page itself no longer reads this sheet: it is built from the 1st sheet of each
+# squad's spreadsheet listed in DISTRIBUTION_SHEET_URLS below.
 # ------------------------------------------------------------
 DEFAULT_ROSTER_SHEET_URL = (
     "https://docs.google.com/spreadsheets/d/16cIg2Ufh3FO8Qt6KC7WGzP9NcppfiRziCtsHigVt-T4/edit?hl=vi&pli=1&gid=0#gid=0"
