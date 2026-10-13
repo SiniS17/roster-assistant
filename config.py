@@ -27,6 +27,25 @@ _env_urls = _os.environ.get("DISTRIBUTION_SHEET_URLS", "").strip()
 if _env_urls:
     DISTRIBUTION_SHEET_URLS = [u.strip() for u in _env_urls.replace(",", "\n").splitlines() if u.strip()]
 
+# Display name of each spreadsheet above, matched BY POSITION: the 1st URL is
+# Squad 1, the last one is Squad 4. Shown on the Daily Distribution tabs.
+# If you add a URL and forget a name, it falls back to "Squad <position>".
+DISTRIBUTION_SHEET_NAMES = [
+    "Squad 1",
+    "Squad 2",
+    "Squad 3",
+    "Squad 4",
+]
+
+# Daily Distribution crew role -> the code used for that role in the main roster.
+#   Trực đội -> TĐ,  Dock planner -> ppc,  Foreman -> fm
+# Keys match the labels read from each spreadsheet's 1st sheet.
+DISTRIBUTION_ROLE_MARKERS = {
+    "truc_doi": "TĐ",
+    "dock_planner": "ppc",
+    "foreman": "fm",
+}
+
 # How long (seconds) fetched sheet data is reused before asking Google again.
 # The page's reload button always bypasses this.
 DISTRIBUTION_CACHE_SECONDS = 60

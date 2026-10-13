@@ -105,13 +105,34 @@ which zone on a chosen day. It never writes to them.
   `FOREMAN`, `TRỰC ĐỘI`, `DOCK PLANNER`, `SHIFT / TECH SUPP` (name, then phone
   next to it or below it), plus any rows that hold an employee ID and a phone
   number - that is the phone book used for the PHONE column.
+- **If the 1st sheet is a monthly roster** (header row with `ID` + `NAME`, one date
+  column per day) the crew header is read from it for the selected day: anyone whose
+  cell holds `TĐ` (Trực đội), `PPC` (Dock planner) or `FM` (Foreman) - alone or with
+  a shift/aircraft, like `TĐ-SAG`, `TĐ @16:00`, `A326-FM`. Several people can share
+  a role. These roster codes win over the `FOREMAN:`-style labels; the codes come
+  from `DISTRIBUTION_ROLE_MARKERS` in `config.py`.
 - **Every other sheet** - one day, named `<A/C>-<MMM><DD>` (e.g. `B218-SEP21`).
-  It holds `ORD / NAME AND SURNAME / ID / POSITION / REMARK` tables split by
+  A zero-padded day is fine (`A326-OCT09`, `A326-OCT011` = Oct 11). Text before the
+  aircraft is kept as the day's CHECK (`WO COMP A611-OCT07` -> A/C `A611`, CHECK
+  `WO COMP`). A tab named only with a number (`1`, `14`) is that day of the month
+  the 1st sheet is a roster for (read from `THÁNG 10.2026` in its top rows, or from
+  a tab name like `Doi 3 Thang 10`, or - when the 1st sheet has no month text, like
+  Squad 1/4's `ROSTER` - the dates over its day columns). The A/C shown is the one in
+  each day's own tab name, else the `A/C:` on the day tab itself; with neither, the page
+  shows just the date. It holds `ORD / NAME AND SURNAME / ID / POSITION / REMARK` tables split by
   section rows (`ZONE 128`, `ZONE 128 @16H00`, `ZONE AVI`, `STRUCTURE PAINTING`...).
   `ZONE ...` sections fill the left column (`@16H00`-style ones get a sun/moon
   icon); the right column always lists Structure Sheet Metal / Composite /
   Painting and Cabin, showing "No personnel assigned" until a section with that
   name has people. A red REMARK in the sheet stays red on the page.
+- **Squad 1/4 layout**: the 1st sheet is `ROSTER`; day tabs are named `1`, `2` ...
+  Each day tab has its own info block (`A/C: A864`, `FOREMAN:`, `BCH ĐỘI` = Trực đội,
+  `TECH SUPPORT`, `DOCK PLANNER:`, each with `PHONE:` next to it; `#N/A` = nobody), then two
+  tables side by side with `ORD / NAME AND SURNAME / VAECO ID / POSITION / PHONE / REMARK`
+  (any `<word> ID` header works). Section titles like `A864-128` count as zones. A note in
+  REMARK/PHONE/POSITION on a row with no person is not a section. A person row with an ID
+  but no name yet is still listed. For the crew, labels on the day tab win over the
+  `TĐ`/`PPC`/`FM` codes in the roster.
 - Sheets that don't match the name pattern (notes, templates) are ignored.
 
 **Setup**
@@ -162,6 +183,11 @@ Roster Sheet URL (defaults to the one configured in `config.py`), and click
 Edit `config.py`:
 - `DEFAULT_ROSTER_SHEET_URL` — pre-fills the form; users can still paste a
   different sheet URL (e.g. a different team or month).
+- `DISTRIBUTION_SHEET_URLS` / `DISTRIBUTION_SHEET_NAMES` — the Daily Distribution
+  spreadsheets and their tab names, matched by position (1st URL = Squad 1 ...
+  last = Squad 4).
+- `DISTRIBUTION_ROLE_MARKERS` — roster codes for the crew roles: Trực đội = `TĐ`,
+  Dock planner = `ppc`, Foreman = `fm`.
 - `COURSE_ABBREVIATIONS` / `COURSE_NAME_ABBREVIATIONS` — marker shorthand.
 - `MARKER_PREFIX` — defaults to `H`.
 - `LOG_COLUMN_HEADERS` / `LOG_EVENT_LABELS` — labels used in the log file.
