@@ -17,8 +17,14 @@ import json
 import os
 import re
 
+import httplib2
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
+
+try:
+    from google_auth_httplib2 import AuthorizedHttp
+except ImportError:  # pragma: no cover - ships with google-api-python-client
+    AuthorizedHttp = None
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 # The Daily Distribution page only ever READS other teams' spreadsheets, so it
@@ -28,6 +34,30 @@ DRIVE_READONLY_SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 
 _service = None
 _creds_cache = {}
+
+# httplib2 >= 0.32 refuses any gzip response that expands more than 100x ("DecodeRatioError: Amplification
+# ratio 232.8 ..."). A big sheet whose formatted-but-empty cells come back as {} is legitimately that
+# compressible (Squad 2: 63 KB -> 14.7 MB), so the ratio check is switched off (0 = off). The absolute
+# hard limit stays on, so a real decompression bomb is still stopped.
+DECODE_LIMIT_RATIO = 0
+DECODE_LIMIT_HARD = 512 << 20  # 512 MB
+
+
+def _http(creds):
+    """An authorised httplib2 client with the relaxed decode limits (old httplib2 versions: defaults)."""
+    try:
+        base = httplib2.Http(decode_limit_ratio=DECODE_LIMIT_RATIO, decode_limit_hard=DECODE_LIMIT_HARD)
+    except TypeError:  # httplib2 older than the decode-limit options
+        base = httplib2.Http()
+    return AuthorizedHttp(creds, http=base) if AuthorizedHttp else None
+
+
+def _build(api, version, scopes):
+    creds = _credentials(scopes)
+    http = _http(creds)
+    if http is None:
+        return build(api, version, credentials=creds, cache_discovery=False)
+    return build(api, version, http=http, cache_discovery=False)
 
 
 def _credentials(scopes):
@@ -72,18 +102,18 @@ def _credentials(scopes):
 def get_service():
     global _service
     if _service is None:
-        _service = build("sheets", "v4", credentials=_credentials(SCOPES), cache_discovery=False)
+        _service = _build("sheets", "v4", SCOPES)
     return _service
 
 
 def make_readonly_service():
     """A NEW view-only Sheets client (clients aren't thread-safe, so callers on threads build their own)."""
-    return build("sheets", "v4", credentials=_credentials(READONLY_SCOPES), cache_discovery=False)
+    return _build("sheets", "v4", READONLY_SCOPES)
 
 
 def make_drive_service():
     """A NEW view-only Drive client, used to download spreadsheets that are really uploaded .xlsx files."""
-    return build("drive", "v3", credentials=_credentials(DRIVE_READONLY_SCOPES), cache_discovery=False)
+    return _build("drive", "v3", DRIVE_READONLY_SCOPES)
 
 
 def parse_sheet_url(url):
