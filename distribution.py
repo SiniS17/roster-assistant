@@ -45,6 +45,7 @@ from sheets_client import make_drive_service, make_readonly_service, parse_sheet
 MONTHS = {m: i + 1 for i, m in enumerate("JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC".split())}
 # '0*' lets zero-padded days through: 'A326-OCT09', 'A326-OCT010' and 'A326-OCT011' are Oct 9, 10 and 11.
 TAB_RE = re.compile(r"^\s*(?P<ac>.*?)[\s_\-]*(?P<mon>[A-Za-z]{3})[\s_\-]*0*(?P<day>\d{1,2})\s*$")
+ZONE_TITLE_RE = re.compile(r"^[A-Z]{1,3}\d{2,4}\s*[-–]\s*\S")  # section 'A864-128' (aircraft + zone) counts as a zone
 NUM_TAB_RE = re.compile(r"^\s*0*(?P<day>\d{1,2})\s*$")  # a tab named just '1' ... '31'
 AC_NOTE_RE = re.compile(r"^(?P<note>.+?)\s+(?P<ac>[A-Za-z]{1,3}\d{2,4})$")  # 'WO COMP A611'
 MONTH_TEXT_RE = re.compile(r"\b(?:thang|month)\s*(\d{1,2})(?:\s*[./\-]\s*(\d{4}))?")
@@ -364,7 +365,7 @@ _LABELS = {
     "check": {"check", "check type", "loai check"},
     "dates": {"date", "dates", "date range", "ngay", "period", "thoi gian"},
     "foreman": {"foreman"},
-    "truc_doi": {"truc doi"},
+    "truc_doi": {"truc doi", "bch doi"},  # Squad 1's day tabs call the duty lead 'BCH ĐỘI'
     "dock_planner": {"dock planner"},
     "shift_tech": {"shift / tech supp", "shift/tech supp", "shift / tech support", "shift/tech support", "shift", "tech supp", "tech support"},
 }
@@ -374,7 +375,7 @@ _PERSON_KEYS = ("foreman", "truc_doi", "dock_planner", "shift_tech")
 
 def _label_of(cell):
     """('ac', 'B218' or '') when the cell is a label, optionally with the value inline ('A/C: B218')."""
-    f = fold(cell)
+    f = fold(cell).rstrip(" :=")  # 'FOREMAN:' and 'DOCK PLANNER:' (label, colon, value in the next cell)
     if f in _LABEL_LOOKUP:
         return _LABEL_LOOKUP[f], ""
     m = re.match(r"^([a-z/ ]{2,24}?)\s*[:=]\s*(.+)$", text(cell), re.I)
@@ -420,6 +421,8 @@ def _person_after(values, r, c, inline):
     name = re.sub(r"[\s,;()\-–]*\+?\d[\d\s.\-]{7,}\d\)?\s*$", "", str(first)).strip() if phone else text(first)
     if not phone:
         phone = next((clean_phone(v) for v in rest if clean_phone(v)), "")
+    if name.startswith("#"):  # a formula error such as '#N/A' means nobody is assigned
+        return None
     return {"name": name, "phone": phone} if name else None
 
 
@@ -511,13 +514,17 @@ def _meta_for(index, force=False):
             raise ValueError("The spreadsheet has no visible sheets.")
         first_values = _first_sheet_values(index, force, src)
         info, phones, warnings = parse_info(first_values)
-        out["warnings"] = warnings
+        # A/C and CHECK are read per day (tab name or the day tab itself), so their absence here is no problem.
+        out["warnings"] = [w for w in warnings if not w.startswith(("A/C", "Check"))]
         out["people"] = info["people"]
         out["check"] = info["check"]
-        out["ac"] = info["ac"]
         out["date_text"] = info["date_text"]
-        # Month of a monthly-roster 1st sheet ('Doi 3 Thang 10'): used for tabs named only '1'...'31'.
+        # Month of a monthly-roster 1st sheet (its 'THÁNG 10.2026' title or its date columns):
+        # used for tabs named only '1'...'31'.
         month_ref = roster_month(tabs[0], first_values, info["date_from"])
+        if not month_ref and any(NUM_TAB_RE.match(t) for t in tabs[1:]):
+            month_ref = date.today().replace(day=1)
+            out["warnings"].append(f"Couldn't find the roster's month; number-only tabs are read as {month_ref:%b %Y}")
         ref = month_ref or info["date_from"] or date.today()
         out["date_from"] = info["date_from"].isoformat() if info["date_from"] else None
         out["date_to"] = info["date_to"].isoformat() if info["date_to"] else None
@@ -530,12 +537,10 @@ def _meta_for(index, force=False):
                 days.append({"tab": tab, "ac": ac, "note": note, "date": parsed[1].isoformat()})
         days.sort(key=lambda d: d["date"])
         out["days"] = days
-        if not out["ac"] and days:
-            out["ac"] = next((d["ac"] for d in days if d["ac"]), "")
-            if out["ac"]:  # the tab names supply it, so the "not found" warning is just noise
-                out["warnings"] = [w for w in out["warnings"] if not w.startswith("A/C")]
-        if not out["ac"]:
-            out["ac"] = src.title
+        # ac_known: a real aircraft (1st sheet label, else a tab name); '' when there is none - the page then
+        # shows just the date. out['ac'] is only the label for the spreadsheet's own tab button.
+        out["ac_known"] = info["ac"] or next((d["ac"] for d in days if d["ac"]), "")
+        out["ac"] = out["ac_known"] or src.title
         if not out["date_from"] and days:
             out["date_from"], out["date_to"] = days[0]["date"], days[-1]["date"]
         if not days:
@@ -561,7 +566,7 @@ def build_meta(force=False):
 
 # --------------------------------------------------------------- day tabs
 _NAME_LABELS = {"name and surname", "name & surname", "name", "ho ten", "ho va ten", "ho & ten", "ten"}
-_ID_LABELS = {"id", "ma nv", "ma nhan vien", "emp id", "employee id"}
+_ID_LABELS = {"id", "ma nv", "ma nhan vien", "emp id", "employee id", "vaeco id", "id vaeco", "ma vaeco"}
 _POS_LABELS = {"position", "pos", "vi tri", "chuc danh"}
 _REMARK_LABELS = {"remark", "remarks", "ghi chu", "note", "notes"}
 _PHONE_LABELS = {"phone", "tel", "sdt", "so dien thoai", "phone number", "mobile"}
@@ -578,6 +583,8 @@ def _find_headers(values):
             f = fold(cell)
             if not f:
                 continue
+            if re.fullmatch(r"[a-z]{2,10} id", f):  # 'VAECO ID', 'EMP ID' ... any '<word> ID' header
+                f = "id"
             for key, labels in (("name", _NAME_LABELS), ("id", _ID_LABELS), ("pos", _POS_LABELS),
                                 ("remark", _REMARK_LABELS), ("phone", _PHONE_LABELS), ("ord", _ORD_LABELS)):
                 if f in labels:
@@ -645,8 +652,12 @@ def parse_day(values, colors, phones=None):
                     "red": is_red(color),
                 })
                 continue
-            cells = [text(row[c]) for c in range(left, min(right + 1, len(row))) if text(row[c])]
-            if cells and len(cells[0]) <= 48 and not any(fold(x) in _ID_LABELS | _NAME_LABELS for x in cells):
+            filled = [(c, text(row[c])) for c in range(left, min(right + 1, len(row))) if text(row[c])]
+            cells = [t for _, t in filled]
+            # A section title sits at the left of the table (ORD/NAME columns, often merged across the row);
+            # a stray note in REMARK / PHONE / POSITION on a row with no person is not a title.
+            if (filled and filled[0][0] <= h["name"] and len(cells[0]) <= 48
+                    and not any(fold(x) in _ID_LABELS | _NAME_LABELS for x in cells)):
                 current = {"title": re.sub(r"\s+", " ", cells[0]), "people": []}
                 sections.append(current)
 
@@ -656,7 +667,7 @@ def parse_day(values, colors, phones=None):
         tm = TIME_RE.search(title)
         out.append({
             "title": title.upper(),
-            "kind": "zone" if fold(title).startswith("zone") else "other",
+            "kind": "zone" if fold(title).startswith("zone") or ZONE_TITLE_RE.match(title.strip().upper()) else "other",
             "time": f"{int(tm.group(1)):02d}H{tm.group(2)}" if tm else None,
             "people": s["people"],
         })
@@ -707,14 +718,20 @@ def build_day(index, tab, force=False):
     _, phones, _ = parse_info(first_values)
     values, colors = _grid(index, tab, force, src)
     sections = parse_day(values, colors, phones)
-    # Phones for the crew: the 1st sheet's phone book first, then whatever the day tab lists.
+    # The day tab can carry its own header block (Squad 1: 'A/C: A864', 'FOREMAN:', 'DOCK PLANNER:', 'BCH ĐỘI').
+    day_info, day_book, _ = parse_info(values)
+    # Phones for the crew: the 1st sheet's phone book first, then the day tab's, then its table rows.
     day_phones = {p["id"]: p["phone"] for s in sections for p in s["people"] if p["id"] and p["phone"]}
+    labelled = {k: [{"name": p["name"], "id": "", "phone": p["phone"], "note": ""}] for k, p in day_info["people"].items()}
+    crew = {**roster_crew(first_values, date.fromisoformat(day["date"]), {**day_phones, **day_book, **phones}), **labelled}
     return {
         "index": index,
         "tab": tab,
         "date": day["date"],
-        "ac": day["ac"] or meta["ac"],  # each day tab names its own aircraft (A611-OCT06, A326-OCT09 ...)
-        "check": day.get("note", ""),  # e.g. 'WO COMP' from 'WO COMP A611-OCT07'
-        "crew": roster_crew(first_values, date.fromisoformat(day["date"]), {**day_phones, **phones}),
+        # Aircraft: the tab name (A611-OCT06) -> the 'A/C:' on the day tab -> the 1st sheet's. '' = none: date only.
+        "ac": day["ac"] or day_info["ac"] or meta.get("ac_known", ""),
+        "check": day.get("note", "") or day_info["check"],  # e.g. 'WO COMP' from 'WO COMP A611-OCT07'
+        # Crew precedence: labels on the day tab > TĐ/PPC/FM codes in the roster > labels on the 1st sheet (page).
+        "crew": crew,
         "sections": sections,
     }

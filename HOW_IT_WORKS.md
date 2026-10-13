@@ -116,13 +116,23 @@ which zone on a chosen day. It never writes to them.
   aircraft is kept as the day's CHECK (`WO COMP A611-OCT07` -> A/C `A611`, CHECK
   `WO COMP`). A tab named only with a number (`1`, `14`) is that day of the month
   the 1st sheet is a roster for (read from `THÁNG 10.2026` in its top rows, or from
-  a tab name like `Doi 3 Thang 10`). The A/C shown is the one in each day's own tab
-  name. It holds `ORD / NAME AND SURNAME / ID / POSITION / REMARK` tables split by
+  a tab name like `Doi 3 Thang 10`, or - when the 1st sheet has no month text, like
+  Squad 1/4's `ROSTER` - the dates over its day columns). The A/C shown is the one in
+  each day's own tab name, else the `A/C:` on the day tab itself; with neither, the page
+  shows just the date. It holds `ORD / NAME AND SURNAME / ID / POSITION / REMARK` tables split by
   section rows (`ZONE 128`, `ZONE 128 @16H00`, `ZONE AVI`, `STRUCTURE PAINTING`...).
   `ZONE ...` sections fill the left column (`@16H00`-style ones get a sun/moon
   icon); the right column always lists Structure Sheet Metal / Composite /
   Painting and Cabin, showing "No personnel assigned" until a section with that
   name has people. A red REMARK in the sheet stays red on the page.
+- **Squad 1/4 layout**: the 1st sheet is `ROSTER`; day tabs are named `1`, `2` ...
+  Each day tab has its own info block (`A/C: A864`, `FOREMAN:`, `BCH ĐỘI` = Trực đội,
+  `TECH SUPPORT`, `DOCK PLANNER:`, each with `PHONE:` next to it; `#N/A` = nobody), then two
+  tables side by side with `ORD / NAME AND SURNAME / VAECO ID / POSITION / PHONE / REMARK`
+  (any `<word> ID` header works). Section titles like `A864-128` count as zones. A note in
+  REMARK/PHONE/POSITION on a row with no person is not a section. A person row with an ID
+  but no name yet is still listed. For the crew, labels on the day tab win over the
+  `TĐ`/`PPC`/`FM` codes in the roster.
 - Sheets that don't match the name pattern (notes, templates) are ignored.
 
 **Setup**

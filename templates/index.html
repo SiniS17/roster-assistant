@@ -461,7 +461,8 @@ const FIXED_ZONES = ['128','567','34','AVI','STRUCTURE SHEET METAL','STRUCTURE C
 // Which fixed zones a section title covers. Titles can combine zones: '128/567', '34/567', '34567',
 // '128 + AVI', 'ZONE 128 @16H00', and 'ALL ZONES' (= 128 + 34 + 567 + AVI only, not the shops).
 function zonesInTitle(title){
-  const t = fold(title).replace(/@\s*\d{1,2}\s*[h:]\s*\d{2}/g, ' ');   // drop '@16H00'
+  // drop '@16H00' and a leading aircraft code ('A864-128' -> '128'), so 'A834' can't read as zone 34
+  const t = fold(title).replace(/@\s*\d{1,2}\s*[h:]\s*\d{2}/g, ' ').replace(/^[a-z]{1,3}\d{2,4}\s*[-\u2013]\s*/, '');
   const out = new Set();
   for(const m of t.matchAll(/all\s*zones?|\bavi\b|128|567|34|sheet\s*metal|composite|paint|cabin/g)){
     const k = m[0];
@@ -641,10 +642,13 @@ function paintDay(sh, day){
     return `<div><small>${label}${mk ? ` · ${esc(mk)}` : ''}</small>${rows}</div>`;
   }).join('');
   const range = sh.date_from ? fmtRange(sh.date_from, sh.date_to) : (sh.date_text || '–');
+  // A/C and CHECK only when this day has them; with no aircraft the line is just the date.
+  const chk = day.check || sh.check;
+  const metaParts = [day.ac ? `A/C: <b>${esc(day.ac)}</b>` : '', chk ? `CHECK: <b>${esc(chk)}</b>` : '', `DATE: <b>${esc(range)}</b>`].filter(Boolean);
   const warn = (sh.warnings || []).length ? `<div class="dist-warn">⚠ ${sh.warnings.map(esc).join(' · ')}</div>` : '';
 
   $('wrap').innerHTML = `<div class="dist"><div class="dist-head"><div><h1 class="dist-date">${fmtHeading(day.date)}</h1>` +
-    `<div class="dist-meta">A/C: <b>${esc(day.ac || sh.ac || '–')}</b><i>•</i>CHECK: <b>${esc(day.check || sh.check || '–')}</b><i>•</i>DATE: <b>${esc(range)}</b></div></div>` +
+    `<div class="dist-meta">${metaParts.join('<i>•</i>')}</div></div>` +
     `<div class="crew">${crew}</div></div>` +
     (zones.length
       ? `<div class="dist-cols"><div class="dist-col">${zoneHtml}</div><div class="dist-col">${shopHtml}${noZones}</div></div>`
