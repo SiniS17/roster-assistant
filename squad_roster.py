@@ -26,6 +26,16 @@ from roster_view import build_roster_payload
 TEAM_HEADER = "Đội"
 
 
+def own_rows_cutoff(values, header_row):
+    """First row that is NOT one of the squad's own people: the 'NV TĂNG CƯỜNG' (reinforcement staff) row,
+    or the end of the sheet. Everything from there down belongs to other squads (or is a summary)."""
+    return next(
+        (r for r in range(header_row + 1, len(values))
+         if any("tang cuong" in dist.fold(v) for v in values[r] if isinstance(v, str))),
+        len(values),
+    )
+
+
 def _squad_roster(index, force=False):
     """One squad's roster payload (own employees only), cached like the distribution data."""
     url = dist.configured_urls()[index]
@@ -36,12 +46,7 @@ def _squad_roster(index, force=False):
         values, colors = dist.first_sheet_grid(index, force, src)
         payload = build_roster_payload(title, values, colors, lenient=True)
         header_row = find_roster_header_grid(values, lenient=True)[0]
-        # Everything from the 'NV TĂNG CƯỜNG' row down belongs to other squads (or is a summary).
-        cutoff = next(
-            (r for r in range(header_row + 1, len(values))
-             if any("tang cuong" in dist.fold(v) for v in values[r] if isinstance(v, str))),
-            len(values),
-        )
+        cutoff = own_rows_cutoff(values, header_row)
         payload["employees"] = [
             e for e in payload["employees"] if e["row"] < cutoff and dist.ID_RE.match(e["id"] or "")
         ]

@@ -9,9 +9,12 @@ GET /api/roster  the roster as JSON, built from the 1st sheet of the 4 squads' s
                  KHDT sheet with its Main/temp tabs, used to preview a KHDT run's 'temp' tab.
 GET /api/distribution      Daily Distribution: the configured spreadsheets + their day tabs
 GET /api/distribution/day  one day's zones/people (?sheet=<n>&tab=<tab title>)
-POST /run        KHDT upload. Changes go to the 'temp' tab, never straight into 'Main'.
+POST /api/khdt/preview  KHDT upload -> proposed changes to the 4 squads' sheets (nothing is written).
+                 The page highlights them; each person keeps/rejects them in their own browser.
+POST /api/khdt/export   writes the kept (signed, re-checked) changes into the squads' real sheets.
+POST /run        Old KHDT flow: changes go to the KHDT sheet's 'temp' tab, never straight into 'Main'.
                   With the page's fetch() call it answers JSON;
-                 a plain browser form post still gets the old result page.
+                 a plain browser form post still gets the old result page. (No longer used by the page.)
 
 See HOW_IT_WORKS.md for what this does to your files/sheet, and the
 "Setup" section of that file for the Google service-account steps.
@@ -27,6 +30,7 @@ load_dotenv()
 
 from flask import Flask, flash, jsonify, redirect, render_template, request, url_for
 
+import khdt_review
 from config import DEFAULT_ROSTER_SHEET_URL, DISTRIBUTION_ROLE_MARKERS
 from distribution import build_day, build_meta
 from engine import load_khdt, mark_roster_grid
@@ -45,7 +49,7 @@ def _wants_json():
 
 @app.route("/", methods=["GET"])
 def index():
-    return render_template("index.html", default_sheet_url=DEFAULT_ROSTER_SHEET_URL)
+    return render_template("index.html")
 
 
 @app.route("/api/roster", methods=["GET"])
@@ -119,6 +123,44 @@ def api_distribution_day():
     except Exception as e:
         return jsonify(ok=False, error=f"{type(e).__name__}: {e}"), 400
     return jsonify(ok=True, **day)
+
+
+@app.route("/api/khdt/preview", methods=["POST"])
+def api_khdt_preview():
+    """KHDT upload -> the proposed changes to the 4 squads' sheets. Writes nothing anywhere."""
+    khdt_file = request.files.get("khdt_file")
+    if not khdt_file or khdt_file.filename == "":
+        return jsonify(ok=False, error="Please choose a KHDT .xlsx file."), 400
+    try:
+        khdt_rows = load_khdt(khdt_file.stream)
+        result = khdt_review.preview(khdt_rows, app.secret_key, force=request.form.get("force") == "on")
+        log_buffer = io.BytesIO()
+        write_log_workbook(log_buffer, result["event_log"], result["log"], result["stats"])
+    except Exception as e:
+        return jsonify(ok=False, error=f"{type(e).__name__}: {e}"), 400
+    return jsonify(
+        ok=True,
+        file=khdt_file.filename,
+        changes=result["changes"],
+        stats=result["stats"],
+        log=result["log"],
+        log_b64=base64.b64encode(log_buffer.getvalue()).decode("ascii"),
+        squads=result["squads"],
+    )
+
+
+@app.route("/api/khdt/export", methods=["POST"])
+def api_khdt_export():
+    """Write the changes the person kept into the squads' real sheets (each is re-checked against the live sheet)."""
+    body = request.get_json(silent=True) or {}
+    changes = body.get("changes")
+    if not isinstance(changes, list) or not changes:
+        return jsonify(ok=False, error="There are no kept changes to export."), 400
+    try:
+        result = khdt_review.export([c for c in changes if isinstance(c, dict)], app.secret_key)
+    except Exception as e:
+        return jsonify(ok=False, error=f"{type(e).__name__}: {e}"), 400
+    return jsonify(ok=True, **result)
 
 
 @app.route("/run", methods=["POST"])

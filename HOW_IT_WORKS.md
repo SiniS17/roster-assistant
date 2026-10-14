@@ -111,9 +111,41 @@ access (a Viewer share is enough).
 - A squad that can't be read is skipped and named in a yellow bar; the other squads still show.
 - The reload button refetches (otherwise a 60 s cache applies). "Open Google Sheet" opens the
   filtered squad's spreadsheet.
-- **KHDT -> Roster still uses the old sheet** (`DEFAULT_ROSTER_SHEET_URL`: its Main and temp
-  tabs). After a run, the page previews that sheet's temp tab with a "Back to the squads'
-  roster" button. Working around the temp tab is a later task.
+
+## KHDT -> Roster: review first, export when you are happy
+
+The KHDT upload (side menu -> **KHDT -> Roster**) no longer writes to the old Main/temp sheet. It
+proposes changes to the **same four squad sheets the roster page shows**:
+
+1. **Run.** The KHDT file is matched against each squad's 1st sheet with the usual rules (markers,
+   weekend `N`, conflicts, `--force`). Nothing is written to Google Sheets. The squad sheets are read
+   fresh, and someone listed in two squads belongs to the first one (as on the page).
+2. **Review.** Every cell that would change is highlighted on the roster: dashed + flickering green =
+   undecided, solid green = kept, dotted grey = rejected, amber outline = it would replace or extend
+   something that is already in the cell. Click a highlighted box for **Keep / Reject / Undecided**
+   (a multi-day box acts on all its days), or use the **Review list** (filter, search, per-cell
+   buttons) and the bulk buttons **Keep undecided / Reject undecided**. "Only changed rows" hides
+   everyone else.
+3. **Your decisions are yours alone.** They (and the proposed changes) are stored in this browser's
+   `localStorage`, so a reload keeps them, while other people and other devices/browsers see the plain
+   roster. Nothing about the review is stored on the server. Clearing the browser's site data or pressing
+   **Discard** forgets it.
+4. **Export.** **Export N kept -> sheets** writes only the kept cells into the real squad sheets (the 1st
+   sheet of each of the four spreadsheets; each must be shared with the service account as **Editor**).
+   Before writing, every cell is re-read: if the employee moved to another row, the date column moved, or
+   somebody edited the cell after the run, that cell is **skipped and reported**, never overwritten. The
+   page then reloads from the sheets; written cells equal the proposal, so they leave the review by
+   themselves.
+5. **Out of date.** If a cell is edited in the sheet after the run, its change turns "out of date" and is
+   ignored (and cannot be exported). Run KHDT again to refresh. Running KHDT again replaces the current
+   review (the page asks first).
+
+Safety: every proposed change is signed with the app's `FLASK_SECRET_KEY`, and export only writes
+changes that carry a valid signature - so set a real `FLASK_SECRET_KEY` in production. A squad whose
+file is an uploaded `.xlsx` (not a native Google Sheet) can be reviewed but not exported.
+
+The old flow (`POST /run`, writing to the KHDT sheet's `temp` tab) still exists in `app.py` but the
+page no longer uses it.
 
 ## Daily Distribution page (read-only)
 
@@ -196,15 +228,13 @@ pip install -r requirements.txt
 python app.py
 ```
 
-Then open `http://localhost:5000`, upload the KHDT file, confirm/edit the
-Roster Sheet URL (defaults to the one configured in `config.py`), and click
-**Run**.
+Then open `http://localhost:5000`, open the side menu -> **KHDT -> Roster**, upload the KHDT
+file and click **Run**. Review the highlighted changes on the roster, then **Export** the ones you kept.
 
 ## Configuration
 
 Edit `config.py`:
-- `DEFAULT_ROSTER_SHEET_URL` — pre-fills the form; users can still paste a
-  different sheet URL (e.g. a different team or month).
+- `DEFAULT_ROSTER_SHEET_URL` — only used by the old `/run` flow now (the KHDT sheet with Main/temp).
 - `DISTRIBUTION_SHEET_URLS` / `DISTRIBUTION_SHEET_NAMES` — the Daily Distribution
   spreadsheets and their tab names, matched by position (1st URL = Squad 1 ...
   last = Squad 4).
@@ -218,7 +248,8 @@ Edit `config.py`:
 
 | File | Purpose |
 |---|---|
-| `app.py` | Flask routes: roster page, `/run`, `/api/roster`, `/api/distribution*` |
+| `app.py` | Flask routes: roster page, `/api/roster`, `/api/khdt/preview`, `/api/khdt/export`, `/api/distribution*`, old `/run` |
+| `khdt_review.py` | KHDT -> proposed changes on the squads' sheets (signed), and the checked export |
 | `engine.py` | All KHDT-parsing and Roster-matching/marking logic |
 | `sheets_client.py` | Google Sheets read/write (service-account auth) |
 | `distribution.py` | Daily Distribution: reads the other spreadsheets, parses info + day tabs |

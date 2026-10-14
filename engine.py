@@ -495,15 +495,18 @@ def find_roster_header_grid(values, lenient=False, default_month=None):
                      "columns plus date or day-number columns in the first 30 rows).")
 
 
-def mark_roster_grid(khdt_rows, values, colors, force=False, log=print, event_log=None):
+def mark_roster_grid(khdt_rows, values, colors, force=False, log=print, event_log=None, lenient=False):
     """
     Same algorithm as the desktop tool's mark_roster(), adapted to read
     from/write to in-memory `values`/`colors` grids instead of an openpyxl
     worksheet. Returns (stats, updates) where updates is a list of
     {"row": r, "col": c, "value": v, "color": hex_or_None} - every cell
     that actually needs to change on the live Sheet (0-indexed).
+
+    lenient=True reads the header exactly like the roster page does for the squads' sheets
+    (see find_roster_header_grid), so the dates the changes land on match the page's columns.
     """
-    header_row, id_col, name_col, date_cols = find_roster_header_grid(values)
+    header_row, id_col, name_col, date_cols = find_roster_header_grid(values, lenient=lenient)
 
     sample_dates = sorted(date_cols.keys())
     expected_year = sample_dates[0].year
