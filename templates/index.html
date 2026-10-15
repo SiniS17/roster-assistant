@@ -110,6 +110,47 @@ tbody tr:hover td.name{background-color:var(--hover-name)}
 .btn.primary:hover{background:#1a73f0}
 .btn[disabled]{opacity:.55;cursor:wait}
 
+/* KHDT review: highlighted cells, review bar, popover, lists */
+.review{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center;padding:8px 16px;border-bottom:1px solid var(--line);background:var(--note-bg);color:var(--note-fg)}
+.review[hidden]{display:none}
+.review b{font-variant-numeric:tabular-nums}
+.review small{opacity:.8}
+.review .grow{flex:1}
+.review label{display:flex;gap:6px;align-items:center}
+.btn.sm{padding:4px 12px;border-radius:6px;font-size:12.5px}
+.btn.sm.on{border-color:var(--green);box-shadow:inset 0 -2px var(--green);color:var(--text)}
+.btn.sm[disabled]{opacity:.45;cursor:default}
+.review .btn{color:var(--text)}
+.chip[data-keys]{cursor:pointer}
+.pend{outline:2px dashed var(--green);outline-offset:-2px;animation:flick2 1.8s ease-in-out infinite}
+.kept{outline:2px solid var(--green);outline-offset:-2px}
+.rej{outline:2px dotted var(--ghost-line);outline-offset:-2px}
+.cfl{outline-color:var(--amber)}
+@keyframes flick2{50%{opacity:.5}}
+@media (prefers-reduced-motion:reduce){.pend{animation:none}}
+.pop{position:fixed;z-index:15;width:290px;max-width:calc(100vw - 16px);padding:12px 14px;border:1px solid var(--line2);border-radius:10px;background:var(--panel);box-shadow:0 10px 30px rgba(0,0,0,.35)}
+.pop[hidden]{display:none}
+.pop h4{margin:0;font-size:13.5px}
+.pop h4 small,.rl td small{color:var(--muted);font-weight:500}
+.pop .sub,.sub{color:var(--muted);font-size:11.5px;margin:3px 0 0}
+.pop .sub.warn{color:var(--amber-ink)}
+.pop .was{margin:7px 0 0;display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.pop .row{display:flex;gap:8px;margin-top:12px}
+.vtag{display:inline-block;padding:0 7px;border-radius:999px;border:1px solid var(--line2);color:var(--muted);font-size:10.5px;font-weight:600}
+.vtag.warn{border-color:var(--amber);color:var(--amber-ink)}
+dialog.wide{width:min(900px,96vw)}
+.revlist{max-height:56vh;overflow:auto;border:1px solid var(--line);border-radius:8px}
+table.rl{width:100%;border-collapse:collapse;font-size:12.5px}
+.rl th{position:sticky;top:0;background:var(--panel2);text-align:left;padding:7px 10px;font-size:11px;letter-spacing:.06em;color:var(--muted)}
+.rl td{padding:6px 10px;border-top:1px solid var(--grid);vertical-align:middle}
+.rl td small{display:block}
+.rl td.acts{white-space:nowrap;text-align:right}
+.rl td.acts .btn{margin-left:4px}
+.rl tr.dim{opacity:.6}
+.msg2{padding:26px;text-align:center;color:var(--muted)}
+.okline{margin:8px 0 2px}
+.exp-res{margin-top:14px}
+
 /* side menu */
 .scrim{position:fixed;inset:0;background:rgba(0,0,0,.55);opacity:0;pointer-events:none;transition:opacity .2s;z-index:20}
 .scrim.on{opacity:1;pointer-events:auto}
@@ -140,7 +181,7 @@ dialog::backdrop{background:rgba(0,0,0,.65)}
 .err{margin-top:14px;padding:10px 12px;border:1px solid rgba(239,83,80,.4);border-radius:8px;background:rgba(239,83,80,.1);color:var(--err-text);white-space:pre-wrap;word-break:break-word}
 
 /* Daily Distribution view */
-body[data-view="dist"] .zoom, body[data-view="dist"] #team, body[data-view="dist"] #q, body[data-view="dist"] #month, body[data-view="dist"] #note{display:none!important}
+body[data-view="dist"] .zoom, body[data-view="dist"] #team, body[data-view="dist"] #q, body[data-view="dist"] #month, body[data-view="dist"] #note, body[data-view="dist"] #review, body[data-view="dist"] #pop{display:none!important}
 .daystrip{display:flex;gap:6px;overflow-x:auto;width:100%;scrollbar-width:thin;padding:1px 0}
 .dbtn{flex:none;min-width:62px;padding:5px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);color:var(--muted);text-align:center;line-height:1.25}
 .dbtn small{display:block;font-size:10px;letter-spacing:.08em;font-weight:600}
@@ -222,8 +263,10 @@ table.dt{width:100%;min-width:600px;table-layout:fixed;font-size:12.5px}
 
 <div class="stats" id="stats"></div>
 <div class="note" id="note" hidden></div>
+<div class="review" id="review" hidden></div>
 <div class="wrap" id="wrap"><div class="msg" id="msg">Loading roster…</div></div>
 
+<div class="pop" id="pop" hidden></div>
 <div class="scrim" id="scrim"></div>
 <aside class="drawer" id="drawer" aria-label="Menu">
   <header><div class="logo">R</div><div class="brand">Roster Assistant<small>Menu</small></div></header>
@@ -240,13 +283,10 @@ table.dt{width:100%;min-width:600px;table-layout:fixed;font-size:12.5px}
 <dialog id="khdt">
   <form class="dlg" id="khdtForm">
     <h2>KHDT → Roster</h2>
-    <p>Upload the KHDT training-plan file. Changes are written to the “temp” tab so you can review them — the Main tab is never modified.</p>
+    <p>Upload the KHDT training-plan file. The roster cells it would change are highlighted on the roster page, and you decide which ones to keep. Nothing is written to Google Sheets until you press <b>Export</b>. Your decisions are saved in this browser only - other people and other devices are not affected.</p>
     <label for="file">KHDT file (.xlsx)</label>
     <input id="file" name="khdt_file" type="file" accept=".xlsx" required>
-    <label for="url">Roster Google Sheet URL</label>
-    <input id="url" name="sheet_url" type="text">
     <label class="chk"><input type="checkbox" name="force" id="force"> Overwrite cells that already have content (--force)</label>
-    <label class="chk"><input type="checkbox" name="keep" id="keep"> Add to the changes already in temp (otherwise temp restarts from Main)</label>
     <div class="row">
       <button class="btn primary" id="runBtn" type="submit">Run</button>
       <button class="btn" type="button" id="closeDlg">Close</button>
@@ -255,8 +295,29 @@ table.dt{width:100%;min-width:600px;table-layout:fixed;font-size:12.5px}
   </form>
 </dialog>
 
+<dialog id="revDlg" class="wide">
+  <div class="dlg">
+    <h2>KHDT changes</h2>
+    <div class="row" style="margin:0 0 12px">
+      <select class="search" id="revFilter" aria-label="Filter changes">
+        <option value="">All changes</option><option value="pending">Undecided</option><option value="kept">Kept</option>
+        <option value="rejected">Rejected</option><option value="conflict">Overwrites existing</option><option value="outdated">Out of date / not shown</option>
+      </select>
+      <input class="search" id="revQ" type="search" placeholder="Search name or ID" aria-label="Search changes">
+    </div>
+    <div class="revlist" id="revList"></div>
+    <div class="row"><button class="btn" id="revClose" type="button">Close</button></div>
+  </div>
+</dialog>
+
+<dialog id="expDlg">
+  <div class="dlg">
+    <h2>Export to the squad sheets</h2>
+    <div id="expBody"></div>
+  </div>
+</dialog>
+
 <script>
-const DEFAULT_URL = {{ default_sheet_url|tojson }};
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fold = s => String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/đ/g,'d').replace(/Đ/g,'D').toLowerCase();
@@ -264,7 +325,7 @@ const WD = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
 const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
-const S = { url:'', gid:'', data:null, zoom:1, updated:new Set(), team:'', view:'roster' };
+const S = { data:null, zoom:1, updated:new Set(), team:'', view:'roster', onlyChanged:false };
 
 /* ---------- theme ---------- */
 function syncThemeBtn(){
@@ -290,7 +351,7 @@ $('scrim').onclick = () => menu(false);
 document.addEventListener('keydown', e => { if(e.key === 'Escape') menu(false); });
 $('navRoster').onclick = () => { menu(false); if(S.view !== 'roster') setView('roster'); };
 $('navDist').onclick = () => { menu(false); if(S.view !== 'dist') setView('dist'); };
-$('navKhdt').onclick = () => { menu(false); if(S.view !== 'roster') setView('roster'); $('url').value = S.url || DEFAULT_URL; $('khdt').showModal(); };
+$('navKhdt').onclick = () => { menu(false); if(S.view !== 'roster') setView('roster'); $('khdt').showModal(); };
 $('closeDlg').onclick = () => $('khdt').close();
 
 /* ---------- zoom / search ---------- */
@@ -303,26 +364,82 @@ $('zIn').onclick = () => setZoom(S.zoom + .1);
 $('zOut').onclick = () => setZoom(S.zoom - .1);
 $('q').oninput = () => render();
 $('team').onchange = () => { S.team = $('team').value; render(); };
-$('reload').onclick = () => S.view === 'dist' ? loadDist(true) : load();
+$('reload').onclick = () => S.view === 'dist' ? loadDist(true) : load(true);
+
+/* ---------- KHDT review: the proposed changes live in THIS browser only (localStorage) ---------- */
+// REV = { file, at, changes: { 'ID|YYYY-MM-DD': { squad, squadName, id, name, date, row, col, old, new, newColor,
+//         kind, sig, status:'pending'|'kept'|'rejected', state:'ok'|'stale'|'missing' } } }
+const REV_KEY = 'roster.khdt.review.v1';
+let REV = null, revSaveFailed = false;
+function revLoad(){
+  try{ const j = JSON.parse(localStorage.getItem(REV_KEY) || 'null'); REV = j && j.changes && Object.keys(j.changes).length ? j : null; }
+  catch(e){ /* storage blocked or unreadable: start without a review */ }
+}
+function revSave(){
+  try{
+    if(REV && Object.keys(REV.changes).length) localStorage.setItem(REV_KEY, JSON.stringify(REV));
+    else { REV = null; localStorage.removeItem(REV_KEY); }
+    revSaveFailed = false;
+  }catch(e){ revSaveFailed = true; }
+}
+// Compare every stored change with the roster as it is now. ok = the cell still holds what the preview saw;
+// applied (the cell already shows the new value, e.g. after an export) = dropped; stale = somebody edited the
+// cell meanwhile (ignored, never exported); missing = the person isn't on the page (e.g. that squad didn't load).
+function reconcile(){
+  const d = S.data;
+  if(!REV || !d || d.view !== 'squads') return;
+  const emp = new Map(d.employees.map(e => [e.id, e])), di = new Map(d.dates.map((x, i) => [x, i]));
+  let dropped = false;
+  for(const [k, c] of Object.entries(REV.changes)){
+    const e = emp.get(c.id), i = di.get(c.date);
+    if(!e || i === undefined){ c.state = 'missing'; continue; }
+    const live = String(e.cells[i] || '').trim();
+    if(live === String(c.old).trim()) c.state = 'ok';
+    else if(live === String(c.new).trim()){ delete REV.changes[k]; dropped = true; }
+    else c.state = 'stale';
+  }
+  if(dropped || !Object.keys(REV.changes).length) revSave();
+}
+function revCounts(){
+  const c = {pending:0, kept:0, rejected:0, stale:0, missing:0, conflicts:0, ok:0};
+  if(!REV) return c;
+  for(const x of Object.values(REV.changes)){
+    if(x.state === 'ok'){ c[x.status]++; c.ok++; if(x.kind === 'conflict' && x.status !== 'rejected') c.conflicts++; }
+    else if(x.state === 'stale') c.stale++;
+    else if(x.state === 'missing') c.missing++;
+  }
+  return c;
+}
+// What a roster cell shows: the live value, or - while a KHDT change is under review - the proposed one.
+function eff(e, i){
+  const c = REV && REV.changes[e.id + '|' + S.data.dates[i]];
+  if(c && c.state === 'ok'){
+    if(c.status === 'rejected') return {v:e.cells[i], color:e.colors[i], c, st:'rejected'};
+    return {v:c.new, color:(c.newColor && c.newColor !== '000000') ? c.newColor : null, c, st:c.status};
+  }
+  return {v:e.cells[i], color:e.colors[i], c:null, st:null};
+}
+function setStatus(keys, status){
+  keys.forEach(k => { if(REV && REV.changes[k] && REV.changes[k].state === 'ok') REV.changes[k].status = status; });
+  revSave(); render(); if($('revDlg').open) renderRevList();
+}
+const fmtD = iso => { const [, m, dd] = iso.split('-'); return +dd + '/' + +m; };
 
 /* ---------- loading ---------- */
-async function load(){
+async function load(force){
   $('wrap').innerHTML = '<div class="msg">Loading roster…</div>';
-  const p = new URLSearchParams();
-  if(S.url) p.set('url', S.url);
-  if(S.gid !== '') p.set('gid', S.gid);
   try{
-    const r = await fetch('/api/roster?' + p);
+    const r = await fetch('/api/roster' + (force ? '?refresh=1' : ''));
     const j = await r.json();
     if(!j.ok) throw new Error(j.error || 'Unknown error');
-    S.data = j; S.gid = j.gid;
-    $('navSheet').href = j.sheet_url;
+    S.data = j;
+    reconcile();
     render();
   }catch(e){
-    S.data = null; $('stats').innerHTML = ''; $('tabs').innerHTML = '';
-    $('wrap').innerHTML = '<div class="msg"><div><b>Couldn\u2019t load the roster</b>' +
-      '<code>' + esc(e.message) + '</code><p>Check that the Sheet is shared with the service account and the Google credentials are set (see HOW_IT_WORKS.md).</p>' +
-      '<button class="btn" onclick="load()">Try again</button></div></div>';
+    S.data = null; $('stats').innerHTML = ''; $('review').hidden = true;
+    $('wrap').innerHTML = '<div class="msg"><div><b>Couldn’t load the roster</b>' +
+      '<code>' + esc(e.message) + '</code><p>Check that the squads’ sheets are shared with the service account (Viewer is enough) and the Google credentials are set (see HOW_IT_WORKS.md).</p>' +
+      '<button class="btn" onclick="load(true)">Try again</button></div></div>';
   }
 }
 
@@ -337,6 +454,142 @@ function kindOf(v, color){
   return 'o';
 }
 
+/* ---------- review bar ---------- */
+function renderReviewBar(){
+  const bar = $('review'), c = revCounts();
+  if(!REV || !(c.ok || c.stale || c.missing)){ bar.hidden = true; return; }
+  bar.hidden = false;
+  const bits = [`<span><b>KHDT review</b>${REV.file ? ` <small>${esc(REV.file)}</small>` : ''}: <b>${c.pending}</b> undecided · <b>${c.kept}</b> kept · <b>${c.rejected}</b> rejected</span>`];
+  if(c.conflicts) bits.push(`<span title="These cells already have an entry that would be replaced or extended">⚠ <b>${c.conflicts}</b> touch existing entries</span>`);
+  if(c.stale) bits.push(`<span title="The cell was edited in the sheet after the KHDT run, so the change is ignored. Run KHDT again.">${c.stale} out of date</span>`);
+  if(c.missing) bits.push(`<span title="The employee isn't on the page right now (a squad that didn't load?)">${c.missing} not shown</span>`);
+  if(revSaveFailed) bits.push('<span>⚠ This browser can’t save your decisions - they are lost on reload.</span>');
+  bar.innerHTML = bits.join('') + '<span class="grow"></span>' +
+    `<label><input type="checkbox" id="onlyChg" ${S.onlyChanged ? 'checked' : ''}> only changed rows</label>` +
+    `<button class="btn sm" data-act="list">Review list</button>` +
+    `<button class="btn sm" data-act="keepAll" ${c.pending ? '' : 'disabled'}>Keep undecided</button>` +
+    `<button class="btn sm" data-act="rejectAll" ${c.pending ? '' : 'disabled'}>Reject undecided</button>` +
+    `<button class="btn sm primary" data-act="export" ${c.kept ? '' : 'disabled'}>Export ${c.kept} kept → sheets</button>` +
+    `<button class="btn sm" data-act="discard" title="Forget this review (nothing was written)">Discard</button>`;
+}
+$('review').addEventListener('click', ev => {
+  const b = ev.target.closest('[data-act]'); if(!b || !REV) return;
+  const act = b.dataset.act;
+  const pend = Object.entries(REV.changes).filter(([, c]) => c.state === 'ok' && c.status === 'pending').map(([k]) => k);
+  if(act === 'list'){ openRevList(); }
+  else if(act === 'keepAll') setStatus(pend, 'kept');
+  else if(act === 'rejectAll') setStatus(pend, 'rejected');
+  else if(act === 'export') openExport();
+  else if(act === 'discard'){
+    if(confirm('Discard the whole KHDT review? Nothing has been written to the sheets by it, so the roster stays as it is.')){ REV = null; revSave(); render(); }
+  }
+});
+$('review').addEventListener('change', ev => { if(ev.target.id === 'onlyChg'){ S.onlyChanged = ev.target.checked; render(); } });
+
+/* ---------- popover on a highlighted cell ---------- */
+const pop = $('pop');
+function closePop(){ pop.hidden = true; }
+function openPop(chip){
+  const cs = (chip.dataset.keys || '').split(',').map(k => REV && REV.changes[k]).filter(Boolean).sort((a, b) => a.date < b.date ? -1 : 1);
+  if(!cs.length) return;
+  const f = cs[0], st = cs.every(c => c.status === f.status) ? f.status : 'mixed';
+  const keys = cs.map(c => c.id + '|' + c.date);
+  const lines = cs.slice(0, 8).map(c => `<div class="was"><span class="dim">${fmtD(c.date)}</span> ${esc(c.old || '(empty)')} <span class="dim">→</span> <b>${esc(c.new)}</b></div>`).join('') +
+    (cs.length > 8 ? `<div class="sub">+ ${cs.length - 8} more days</div>` : '');
+  const conflict = cs.some(c => c.kind === 'conflict');
+  pop.innerHTML = `<h4>${esc(f.name)} <small>${esc(f.id)}</small></h4><div class="sub">${esc(f.squadName)} · KHDT ${st === 'kept' ? 'kept' : st === 'rejected' ? 'rejected' : st === 'mixed' ? 'partly decided' : 'not decided yet'}</div>` +
+    lines + (conflict ? '<div class="sub warn">⚠ Replaces or extends something already in the cell.</div>' : '') +
+    `<div class="row"><button class="btn sm primary" data-set="kept" ${st === 'kept' ? 'disabled' : ''}>Keep</button>` +
+    `<button class="btn sm" data-set="rejected" ${st === 'rejected' ? 'disabled' : ''}>Reject</button>` +
+    (st !== 'pending' ? '<button class="btn sm" data-set="pending">Undecided</button>' : '') + '</div>';
+  pop.dataset.keys = keys.join(',');
+  pop.hidden = false;
+  const r = chip.getBoundingClientRect(), pw = pop.offsetWidth, ph = pop.offsetHeight;
+  pop.style.left = Math.max(8, Math.min(r.left, innerWidth - pw - 8)) + 'px';
+  pop.style.top = (r.bottom + 6 + ph > innerHeight ? Math.max(8, r.top - ph - 6) : r.bottom + 6) + 'px';
+}
+pop.addEventListener('click', ev => {
+  const b = ev.target.closest('[data-set]'); if(!b) return;
+  const keys = (pop.dataset.keys || '').split(',');
+  closePop(); setStatus(keys, b.dataset.set);
+});
+$('wrap').addEventListener('click', ev => {
+  const chip = ev.target.closest('[data-keys]');
+  if(chip){ ev.stopPropagation(); openPop(chip); }
+});
+$('wrap').addEventListener('scroll', closePop);
+document.addEventListener('click', ev => { if(!pop.hidden && !pop.contains(ev.target)) closePop(); });
+document.addEventListener('keydown', e => { if(e.key === 'Escape') closePop(); });
+
+/* ---------- review list ---------- */
+function openRevList(){ renderRevList(); if(!$('revDlg').open) $('revDlg').showModal(); }
+function renderRevList(){
+  if(!REV){ $('revDlg').close(); return; }
+  const f = $('revFilter').value, q = fold($('revQ').value.trim()), CAP = 1500;
+  let items = Object.entries(REV.changes).map(([k, c]) => ({k, c}));
+  items = items.filter(({c}) => {
+    if(f === 'pending' || f === 'kept' || f === 'rejected') return c.state === 'ok' && c.status === f;
+    if(f === 'conflict') return c.state === 'ok' && c.kind === 'conflict';
+    if(f === 'outdated') return c.state !== 'ok';
+    return true;
+  }).filter(({c}) => !q || fold(c.name).includes(q) || fold(c.id).includes(q));
+  items.sort((a, b) => a.c.squad - b.c.squad || a.c.row - b.c.row || (a.c.date < b.c.date ? -1 : 1));
+  const rows = items.slice(0, CAP).map(({k, c}) => {
+    const ok = c.state === 'ok', btn = (s, t) => `<button class="btn sm ${ok && c.status === s ? 'on' : ''}" data-key="${esc(k)}" data-set="${s}" ${ok ? '' : 'disabled'}>${t}</button>`;
+    return `<tr class="${ok ? '' : 'dim'}"><td><b>${esc(c.name)}</b><small>${esc(c.id)} · ${esc(c.squadName)}</small></td><td>${fmtD(c.date)}</td>` +
+      `<td>${esc(c.old || '(empty)')} <span class="dim">→</span> <b>${esc(c.new)}</b>${c.kind === 'conflict' ? ' <span class="vtag warn">overwrites</span>' : ''}${ok ? '' : ` <span class="vtag">${c.state === 'stale' ? 'out of date' : 'not shown'}</span>`}</td>` +
+      `<td class="acts">${btn('kept', 'Keep')}${btn('rejected', 'Reject')}${btn('pending', 'Undecided')}</td></tr>`;
+  }).join('');
+  $('revList').innerHTML = items.length
+    ? `<table class="rl"><thead><tr><th>Employee</th><th>Day</th><th>Was → Now</th><th></th></tr></thead><tbody>${rows}</tbody></table>` +
+      (items.length > CAP ? `<p class="sub">Showing the first ${CAP} of ${items.length} - narrow it with the filter or search.</p>` : '')
+    : '<div class="msg2">Nothing matches.</div>';
+}
+$('revFilter').onchange = renderRevList;
+$('revQ').oninput = renderRevList;
+$('revClose').onclick = () => $('revDlg').close();
+$('revList').addEventListener('click', ev => {
+  const b = ev.target.closest('[data-key][data-set]'); if(b) setStatus([b.dataset.key], b.dataset.set);
+});
+
+/* ---------- export the kept changes into the squads' sheets ---------- */
+function keptChanges(){ return REV ? Object.values(REV.changes).filter(c => c.state === 'ok' && c.status === 'kept') : []; }
+function openExport(){
+  const kept = keptChanges();
+  if(!kept.length) return;
+  const per = {}; kept.forEach(c => { per[c.squadName] = (per[c.squadName] || 0) + 1; });
+  $('expBody').innerHTML = `<p>This writes <b>${kept.length}</b> kept change(s) into the real Google Sheets - the first sheet of each squad below. Everything else stays as it is.</p>` +
+    '<div class="pills">' + Object.entries(per).map(([n, x]) => `<span class="pill">${esc(n)} <b>${x}</b></span>`).join('') + '</div>' +
+    '<p class="sub">Each squad’s sheet must be shared with the service account as <b>Editor</b>. A cell that was edited after the KHDT run is skipped, never overwritten.</p>' +
+    '<div class="row"><button class="btn primary" id="expGo">Export now</button><button class="btn" id="expCancel">Cancel</button></div><div id="expOut"></div>';
+  $('expCancel').onclick = () => $('expDlg').close();
+  $('expGo').onclick = runExport;
+  if(!$('expDlg').open) $('expDlg').showModal();
+}
+async function runExport(){
+  const go = $('expGo'), out = $('expOut'), kept = keptChanges();
+  go.disabled = true; go.textContent = 'Exporting…'; out.innerHTML = '';
+  try{
+    const changes = kept.map(({state, status, ...c}) => c);
+    const r = await fetch('/api/khdt/export', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({changes}) });
+    const j = await r.json();
+    if(!j.ok) throw new Error(j.error || 'Export failed');
+    const lines = j.squads.map(s => {
+      const sk = s.skipped.length ? `<div class="sub">Skipped ${s.skipped.length}: ${esc(s.skipped.slice(0, 3).map(x => `${x.name || x.id} ${fmtD(x.date)} (${x.reason})`).join('; '))}${s.skipped.length > 3 ? '…' : ''}</div>` : '';
+      return s.error ? `<div class="err">${esc(s.name)}: ${esc(s.error)}</div>`
+                     : `<div class="okline">✔ ${esc(s.name)}: <b>${s.written}</b> written</div>${sk}`;
+    });
+    if(j.invalid) lines.push(`<div class="err">${j.invalid} change(s) were refused (not from a KHDT run of this app) - run KHDT again.</div>`);
+    out.innerHTML = '<div class="exp-res">' + lines.join('') + '</div><div class="row"><button class="btn" id="expDone">Close</button></div>';
+    $('expDone').onclick = () => $('expDlg').close();
+    go.remove();
+    await load(true);   // re-reads the sheets: the written cells now equal the proposal, so they leave the review by themselves
+  }catch(e){
+    out.innerHTML = '<div class="err">' + esc(e.message) + '</div>';
+    go.disabled = false; go.textContent = 'Export now';
+  }
+}
+
 /* ---------- render ---------- */
 function render(){
   const d = S.data; if(!d) return;
@@ -344,22 +597,16 @@ function render(){
   const today = new Date(); today.setHours(0,0,0,0);
   const sameDay = (a,b) => a.getTime() === b.getTime();
 
-  // header: tabs + month
-  $('tabs').innerHTML = d.tabs.map(t => `<button class="tab ${t.gid === d.gid ? 'on':''}" data-gid="${t.gid}">${esc(t.title)}${t.title.trim().toLowerCase()==='temp' && d.pending ? `<span class="badge" title="${d.pending} cell(s) differ from Main">${d.pending}</span>` : ''}</button>`).join('');
-  // note bar
-  const note = $('note'), tempTab = d.tabs.find(t => t.title.trim().toLowerCase()==='temp');
-  if(d.view === 'temp'){
-    note.hidden = false; note.className = 'note';
-    note.innerHTML = d.pending ? `<span>Previewing <b>temp</b>: ${d.pending} cell(s) differ from Main (flickering). Main is unchanged.</span>` : `<span>Previewing <b>temp</b>: identical to Main.</span>`;
-  } else if(d.view === 'main' && d.pending && tempTab){
+  // note bar: squads that couldn't be read, other warnings
+  const note = $('note');
+  if((d.errors || []).length || (d.warnings || []).length){
     note.hidden = false; note.className = 'note warn';
-    note.innerHTML = `<span><b>temp</b> has ${d.pending} pending change(s) from a KHDT run.</span><button id="seeTemp">Review in temp</button>`;
-    $('seeTemp').onclick = () => { S.gid = tempTab.gid; load(); };
+    note.innerHTML = '<span>' + (d.errors || []).map(x => `Couldn’t read <b>${esc(x.name)}</b>: ${esc(x.error)}`).concat((d.warnings || []).map(esc)).join(' · ') + '</span>';
   } else note.hidden = true;
-  $('tabs').querySelectorAll('.tab').forEach(b => b.onclick = () => { S.gid = b.dataset.gid; load(); });
   const first = dates[0], last = dates[dates.length-1];
   $('month').textContent = first.getMonth() === last.getMonth() ? `${MONTHS[first.getMonth()]} ${first.getFullYear()}`
     : `${MON[first.getMonth()]} – ${MON[last.getMonth()]} ${last.getFullYear()}`;
+  renderReviewBar();
 
   // filters: Đội + search
   const hi = d.info_headers.findIndex(t => /(^|[^a-z])doi($|[^a-z])/.test(fold(t)));
@@ -373,15 +620,19 @@ function render(){
       Object.keys(counts).sort((a,b) => a.localeCompare(b,'vi')).map(t => `<option value="${esc(t)}" ${t===S.team?'selected':''}>${esc(t)} (${counts[t]})</option>`).join('');
     tsel.hidden = false;
   } else { tsel.hidden = true; S.team = ''; }
+  // 'Open Google Sheet' opens the filtered squad's spreadsheet (else the first readable one)
+  const srcs = d.sources || [], pick = srcs.find(s => s.name === S.team && !s.error) || srcs.find(s => !s.error);
+  $('navSheet').href = pick ? pick.url : (d.sheet_url || '#');
   const q = fold($('q').value.trim());
-  const rows = d.employees.filter(e =>
+  let rows = d.employees.filter(e =>
     (!S.team || (teamOf(e) || '(blank)') === S.team) &&
     (!q || fold(e.name).includes(q) || fold(e.id).includes(q)));
+  if(S.onlyChanged && REV) rows = rows.filter(e => e.cells.some((_, i) => eff(e, i).c));
 
-  // stats + legend (for the rows currently shown)
+  // stats + legend (for the rows currently shown, with the proposed KHDT changes applied)
   let hCount = 0, redN = 0, hToday = 0; const codes = {};
-  rows.forEach(e => e.cells.forEach((v,i) => {
-    const k = kindOf(v, e.colors[i]); if(!k) return;
+  rows.forEach(e => e.cells.forEach((_, i) => {
+    const x = eff(e, i), v = x.v, k = kindOf(v, x.color); if(!k) return;
     if(k === 'h'){ hCount++; if(sameDay(dates[i], today)) hToday++; }
     if(k === 'nred') redN++;
     if(k === 'o'){ const c = v.trim().toUpperCase(); codes[c] = (codes[c]||0) + 1; }
@@ -403,36 +654,41 @@ function render(){
     h += `<th class="${cls}"><small>${WD[dt.getDay()]}</small>${dt.getDate()}-${MON[dt.getMonth()]}</th>`;
   });
   h += '</tr></thead><tbody>';
-  const chgMap = d.changed || {};
-  const ckey = (e, i) => (e.id || e.name) + '|' + d.dates[i];
-  const sig = (e, i) => { const k = kindOf(e.cells[i], e.colors[i]); return k ? e.cells[i].trim().toUpperCase() + '|' + k + '|' + (ckey(e,i) in chgMap) : null; };
+  // two cells merge into one wide box when they show the same thing in the same review state
+  const sig = x => { const k = kindOf(x.v, x.color); return k ? x.v.trim().toUpperCase() + '|' + k + '|' + (x.st || '') + '|' + (x.c ? x.c.kind : '') : null; };
   rows.forEach((e, n) => {
     const initial = (e.name.trim()[0] || '?').toUpperCase();
     const sub = e.info.filter(Boolean);
     h += `<tr><td class="name"><div class="who"><span class="idx">${n+1}</span><span class="av">${esc(initial)}</span>` +
          `<span><b title="${esc(e.name)}">${esc(e.name)}</b><small><i>${esc(e.id)}</i>${sub.length ? ' · ' + esc(sub.join(' · ')) : ''}</small></span></div></td>`;
-    const N = e.cells.length;
+    const E = e.cells.map((_, i) => eff(e, i)), N = E.length;
     for(let i = 0; i < N; ){
-      const v = e.cells[i], k = kindOf(v, e.colors[i]), dt = dates[i];
+      const x = E[i], v = x.v, k = kindOf(v, x.color), dt = dates[i];
       if(!k){
-        const old = chgMap[ckey(e, i)];
-        const ghost = old ? `<span class="chip ghost chg" title="${esc(e.name)} · removed in temp (Main: ${esc(old)})">${esc(/^H /i.test(old.trim()) ? old.trim().slice(2) : old)}</span>` : '';
+        let ghost = '';
+        if(x.st === 'rejected'){   // a rejected proposal on an empty cell: shown struck through, click to reconsider
+          const nv = x.c.new;
+          ghost = `<span class="chip ghost" data-keys="${esc(x.c.id + '|' + x.c.date)}" title="${esc(e.name)} · KHDT change rejected (${esc(nv)}) - click to reconsider">${esc(/^H /i.test(nv.trim()) ? nv.trim().slice(2) : nv)}</span>`;
+        }
         h += `<td class="day ${isWe(dt) ? 'we':''} ${sameDay(dt,today) ? 'today':''}">${ghost}</td>`; i++; continue;
       }
-      // merge consecutive days that carry the same value into one wide box
-      const key = sig(e, i);
+      const key = sig(x);
       let j = i + 1;
-      while(j < N && sig(e, j) === key) j++;
-      const chg = ckey(e, i) in chgMap;
+      while(j < N && sig(E[j]) === key) j++;
       const span = j - i, end = dates[j-1];
-      const hasToday = dates.slice(i, j).some(x => sameDay(x, today));
-      const up = e.cells.slice(i, j).some((_, x) => S.updated.has(e.row + ':' + d.cols[i+x])) ? ' upd' : '';
+      const keys = E.slice(i, j).filter(y => y.c).map(y => y.c.id + '|' + y.c.date);
+      const hasToday = dates.slice(i, j).some(y => sameDay(y, today));
+      const up = e.cells.slice(i, j).some((_, y) => S.updated.has(e.row + ':' + d.cols[i+y])) ? ' upd' : '';
       const style = k === 'o' ? ` style="--h:${hue(v.trim().toUpperCase())}"` : '';
-      const was = chg && span === 1 ? ` · Main: ${chgMap[ckey(e, i)] || '(empty)'}` : (chg ? ' · changed vs Main' : '');
+      const cls = (x.st === 'pending' ? ' pend' : x.st === 'kept' ? ' kept' : x.st === 'rejected' ? ' rej' : '') +
+                  (x.c && x.c.kind === 'conflict' && x.st !== 'rejected' ? ' cfl' : '');
       const range = span > 1 ? `${dt.getDate()}/${dt.getMonth()+1} – ${end.getDate()}/${end.getMonth()+1} (${span} days)` : `${dt.getDate()}/${dt.getMonth()+1}`;
       const label = k === 'h' ? v.trim().slice(2) : v;
+      let tip = `${e.name} · ${range} · ${v}`;
+      if(x.c && x.st !== 'rejected') tip += ` · was: ${x.c.old || '(empty)'} · KHDT ${x.st === 'kept' ? 'kept' : 'not decided yet'} - click to decide`;
+      else if(x.st === 'rejected') tip += ' · KHDT change rejected - click to reconsider';
       h += `<td class="day ${span > 1 ? 'span':''} ${span === 1 && isWe(dt) ? 'we':''} ${hasToday ? 'today':''}" colspan="${span}">` +
-           `<span class="chip k-${k}${up}${chg ? ' chg':''}"${style} title="${esc(e.name)} · ${range} · ${esc(v)}${esc(was)}">${esc(label)}</span></td>`;
+           `<span class="chip k-${k}${up}${cls}"${style}${keys.length ? ` data-keys="${esc(keys.join(','))}"` : ''} title="${esc(tip)}">${esc(label)}</span></td>`;
       i = j;
     }
     h += '</tr>';
@@ -448,9 +704,9 @@ function setView(v){
   $('navRoster').classList.toggle('on', v === 'roster');
   $('navDist').classList.toggle('on', v === 'dist');
   try{ history.replaceState(null, '', v === 'dist' ? '#distribution' : location.pathname + location.search); }catch(e){}
-  $('tabs').innerHTML = ''; $('stats').innerHTML = ''; $('note').hidden = true;
+  $('tabs').innerHTML = ''; $('stats').innerHTML = ''; $('note').hidden = true; $('review').hidden = true; $('pop').hidden = true;
   $('sub').textContent = v === 'dist' ? 'VAECO · Daily Distribution' : 'VAECO';
-  if(v === 'dist') loadDist(); else { $('navSheet').href = S.data ? S.data.sheet_url : '#'; load(); }
+  if(v === 'dist') loadDist(); else load();
 }
 
 /* ---------- Daily Distribution ---------- */
@@ -656,19 +912,25 @@ function paintDay(sh, day){
       : `<div class="dist-cols solo"><div class="dist-col">${shopHtml}${noZones}</div></div>`) + `${warn}</div>`;
 }
 
-/* ---------- KHDT run ---------- */
+/* ---------- KHDT run: proposes changes on the roster, writes nothing ---------- */
 $('khdtForm').onsubmit = async ev => {
   ev.preventDefault();
-  const btn = $('runBtn'), out = $('out');
+  const btn = $('runBtn'), out = $('out'), c0 = revCounts();
+  if(REV && (c0.ok || c0.stale || c0.missing) &&
+     !confirm(`You still have ${c0.ok + c0.stale + c0.missing} KHDT change(s) under review (${c0.kept} kept). A new run replaces them - nothing is lost from the sheets, but your decisions are. Continue?`)) return;
   btn.disabled = true; btn.textContent = 'Running…'; out.innerHTML = '';
   try{
-    const r = await fetch('/run', { method:'POST', body:new FormData($('khdtForm')), headers:{'X-Requested-With':'fetch'} });
+    const r = await fetch('/api/khdt/preview', { method:'POST', body:new FormData($('khdtForm')) });
     const j = await r.json();
     if(!j.ok) throw new Error(j.error || 'Run failed');
+    REV = j.changes.length ? { file:j.file, at:Date.now(), changes:Object.fromEntries(j.changes.map(c => [c.id + '|' + c.date, Object.assign(c, {status:'pending'})])) } : null;
+    revSave();
     const labels = { marked:'Marked', conflicts:'Conflicts', overlaps_combined:'Overlaps combined', weekend_n:'Weekend N', already_marked:'Already marked', no_id_match:'No ID match', name_mismatch:'Name mismatch', no_date_overlap:'Outside date range' };
-    out.innerHTML = '<div class="pills">' + Object.entries(labels).map(([k,t]) => `<span class="pill">${t} <b>${j.stats[k] ?? 0}</b></span>`).join('') + '</div>' +
+    out.innerHTML = '<div class="pills">' + (j.squads || []).map(s => `<span class="pill" title="${esc(s.error || '')}">${esc(s.name)} ${s.error ? '⚠' : `<b>${s.changes}</b>`}</span>`).join('') + '</div>' +
+      '<div class="pills">' + Object.entries(labels).map(([k,t]) => `<span class="pill">${t} <b>${j.stats[k] ?? 0}</b></span>`).join('') + '</div>' +
+      `<p>${j.changes.length ? `<b>${j.changes.length}</b> cell change(s) are now highlighted on the roster. Keep or reject them - nothing is written until you export.` : 'No roster cell needs to change.'}</p>` +
       '<div class="log">' + esc(j.log.join('\n')) + '</div>' +
-      '<div class="row"><button class="btn" type="button" id="dl">Download log (.xlsx)</button><button class="btn primary" type="button" id="see">View changes in temp</button></div>';
+      '<div class="row"><button class="btn" type="button" id="dl">Download log (.xlsx)</button><button class="btn primary" type="button" id="see">' + (j.changes.length ? 'Review changes' : 'Close') + '</button></div>';
     $('dl').onclick = () => {
       const bin = atob(j.log_b64), buf = new Uint8Array(bin.length);
       for(let i=0;i<bin.length;i++) buf[i] = bin.charCodeAt(i);
@@ -677,9 +939,7 @@ $('khdtForm').onsubmit = async ev => {
       a.download = 'khdt_roster_log.xlsx'; a.click(); URL.revokeObjectURL(a.href);
     };
     S.updated = new Set();
-    S.url = $('url').value.trim() === DEFAULT_URL ? '' : $('url').value.trim();
-    S.gid = j.gid;
-    await load();
+    await load(true);   // fresh roster, then the proposals are laid over it
     $('see').onclick = () => $('khdt').close();
   }catch(e){
     out.innerHTML = '<div class="err">' + esc(e.message) + '</div>';
@@ -688,6 +948,15 @@ $('khdtForm').onsubmit = async ev => {
   }
 };
 
+// Other tabs of this browser share the same decisions.
+window.addEventListener('storage', e => {
+  if(e.key !== REV_KEY) return;
+  REV = null; revLoad(); reconcile();
+  if(S.view === 'roster' && S.data) render();
+  if($('revDlg').open) renderRevList();
+});
+
+revLoad();
 setView(location.hash === '#distribution' ? 'dist' : 'roster');
 </script>
 </body>

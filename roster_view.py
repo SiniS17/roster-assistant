@@ -32,8 +32,8 @@ def _text(v):
     return str(v).strip()
 
 
-def build_roster_payload(title, values, colors):
-    header_row, id_col, name_col, date_cols = find_roster_header_grid(values)
+def build_roster_payload(title, values, colors, lenient=False):
+    header_row, id_col, name_col, date_cols = find_roster_header_grid(values, lenient=lenient)
     ordered = sorted(date_cols.items())  # [(date, col), ...]
     first_date_col = min(date_cols.values())
     header = values[header_row]
