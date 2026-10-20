@@ -28,3 +28,58 @@
 
 **Next**
 - Start Step 0 (decisions) together, then Step 1 (sheet inventory).
+
+---
+
+## Session: hosting + test environment decision (2026-10-20)
+
+**Task:** Decide how to test now and move the database to the company machine later.
+
+**What changed**
+- `plan.md`: added "Recommended setup (test now, move later)" to Step 0; filled decisions 0.1 and 0.2.
+
+**Decisions**
+- Production: company-provided machine hosting the site locally, with PostgreSQL.
+- Test: Dockerised Postgres pinned to the company machine's major version.
+- Move: schema from migration files, data via `pg_dump -Fc` / `pg_restore`, or re-run the importer.
+
+**Open items**
+- Company machine: Postgres version, OS, whether Docker is allowed there (still unknown).
+- Remaining Step 0 decisions: driver, migration tool, history scope, editing path.
+
+---
+
+## Session: recommendation accepted (2026-10-20)
+
+**Task:** Record that the recommended test/migration setup is accepted.
+
+**What changed**
+- `plan.md`: decisions 0.1-0.4 filled (Docker Postgres for testing, `psycopg` v3 + plain SQL, numbered SQL migrations); Step 0 marked partly decided.
+
+**Workflow:** build and test locally in Docker; build on the company machine later (only `DATABASE_URL` changes).
+
+**Open items**
+- 0.5 history scope, 0.6 editing path, 0.7 Distribution read-only or editable.
+- Need `docs/HOW_IT_WORKS.md` and `docs/structure.md` contents for Step 1.
+
+---
+
+## Session: decisions 0.5-0.7 (2026-10-20)
+
+**Task:** Record history scope, editing path and Distribution editability.
+
+**What changed**
+- `plan.md`: status board now has a Remarks column with the "last N months" risks; decisions 0.5, 0.6, 0.7 filled; Step 8 rewritten as "Roles, editing UI + cutover".
+
+**Decisions**
+- 0.5: import last N months, N to be decided later (risks in Remarks).
+- 0.7: Daily Distribution is editable through the website UI, with user roles.
+- 0.6: follows from 0.7 (UI editing); pending confirmation.
+
+**Impact**
+- Schema needs `users`/roles tables; app needs login and per-route permission checks (new work, previously no logins).
+
+**Open items**
+- Role list and who gets which permission; login method.
+- Value of N.
+- `docs/HOW_IT_WORKS.md` and `docs/structure.md` for Step 1.

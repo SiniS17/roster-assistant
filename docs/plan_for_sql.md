@@ -14,18 +14,19 @@ Goal: replace the 4 squad Google Sheets (+ the KHDT roster sheet's `Main`/`temp`
 
 ## Status board
 
-| # | Step | Status |
-|---|------|--------|
-| 0 | Decisions & scope | ☐ |
-| 1 | Inventory the current sheets | ☐ |
-| 2 | Finalize schema + create database | ☐ |
-| 3 | Data-access layer (backend switch) | ☐ |
-| 4 | Importer: Sheets → Postgres | ☐ |
-| 5 | Parity check (Sheets vs DB) | ☐ |
-| 6 | Switch reads to Postgres | ☐ |
-| 7 | Switch KHDT writes to Postgres | ☐ |
-| 8 | Editing path + cutover | ☐ |
-| 9 | Cleanup, backups, docs | ☐ |
+| # | Step | Status | Remarks |
+|---|------|--------|---------|
+| 0 | Decisions & scope | 🔶 0.1-0.5, 0.7 decided; 0.6 pending confirmation | **Risk of "last N months" (0.5):** (1) older months aren't in the DB, so they can't be viewed or edited in the app; (2) KHDT runs touching an old month find no roster rows; (3) people who appear only in older months won't exist as employees; (4) parity check (Step 5) only proves the imported range; (5) if N is too small we re-import (safe, the importer is idempotent) but only while the sheets still exist, so keep them until N is final. N is decided later. |
+| 1 | Inventory the current sheets | ☐ | Needs `docs/HOW_IT_WORKS.md` and `docs/structure.md` |
+| 2 | Finalize schema + create database | ☐ | Now also needs `users`/roles tables (0.7) |
+| 3 | Data-access layer (backend switch) | ☐ | |
+| 4 | Importer: Sheets → Postgres | ☐ | Range limited by N (0.5) |
+| 5 | Parity check (Sheets vs DB) | ☐ | Covers only the imported months |
+| 6 | Switch reads to Postgres | ☐ | |
+| 7 | Switch KHDT writes to Postgres | ☐ | |
+| 8 | Roles, editing UI + cutover | ☐ | Expanded: login + roles + edit screens (0.7) |
+| 9 | Cleanup, backups, docs | ☐ | |
+
 
 ---
 
@@ -40,6 +41,13 @@ Decide together:
 5. **History scope.** How far back do we import? Current month only, last N months, or everything the sheets hold.
 6. **Who edits data after cutover, and how?** (See Step 8.) Options: SQL client (DBeaver/pgAdmin), a small admin page in the app, or keep editing in Sheets with a periodic re-import.
 7. **Does Daily Distribution stay read-only in the app?** Today it only reads. If the DB replaces the sheet, someone must still create each day's plan somewhere.
+
+**Recommended setup (test now, move later)**
+- Test DB: Postgres in Docker (`docker compose`), same major version as the company machine, data in a named volume. If Docker isn't an option, install the same version natively.
+- Schema is always rebuilt from `SQL/migrations/*.sql`, never copied by hand.
+- Data moves with `pg_dump -Fc --no-owner --no-privileges` then `pg_restore` on the company machine. One file, fast, version-safe (target version must be the same or newer).
+- Alternative for data: re-run the idempotent importer (Step 4) against the real sheets on the company machine. Use this if the test DB only holds imported data; use dump/restore if you edited data in the test DB.
+- Only `DATABASE_URL` changes between test and company machine.
 
 **Done when:** each point above has a written answer in this file (fill the "Decisions" section at the bottom).
 
@@ -160,21 +168,27 @@ Decide: does review state survive a page reload (it should, now that it lives in
 
 ---
 
-## Step 8 — Editing path + cutover
+## Step 8 — Roles, editing UI + cutover
 
-Decide and build the answer to Step 0, point 6:
+Today the app has no logins (it signs in to Google as a service account). Editing through the UI means the app must know who is making each change.
 
-- **A. SQL client only** — fastest, no new UI; fine if only you edit.
-- **B. Small admin page** in the app — edit a roster cell, add/edit a day plan; writes go through the audit table.
-- **C. Keep Sheets as input** with scheduled re-import — safest, but it keeps Google in the loop and the "easy edit" goal is only half met.
+Decide (discussion first):
+1. **Login method:** username + password stored hashed in Postgres (simplest for a local company machine), or company SSO if one exists.
+2. **Roles and permissions.** Proposal to start from: `viewer` (read roster/distribution), `editor` (edit roster cells and day plans), `khdt` (run and apply KHDT), `admin` (manage users and roles). You tell me what the real functions are and who gets which.
+3. **Which screens are editable:** roster cell edit, day plan / zone / assignment / crew edit, employee add/edit.
+
+Build:
+- `users`, `roles` (and user-role link) tables; login/logout, session handling, permission check on every write route.
+- Every UI edit writes through one function that also writes `roster_audit` (who, when, old, new, `source='manual'`).
+- Edit screens for the items chosen above, one at a time.
 
 Cutover checklist:
 1. Final import from Sheets.
-2. Freeze the 4 sheets (change to view-only for everyone but you, add a "MOVED TO DB" note).
+2. Freeze the 4 sheets (view-only for everyone but you, "MOVED TO DB" note).
 3. Switch production `DATA_BACKEND=postgres`.
-4. Keep Sheets untouched for a fallback window (length decided in Step 0).
+4. Keep Sheets untouched for a fallback window.
 
-**Done when:** the app runs only on Postgres and editing works through the chosen path.
+**Done when:** the app runs only on Postgres, and each role can do exactly its allowed edits and nothing else.
 
 ---
 
@@ -191,13 +205,13 @@ Cutover checklist:
 
 | # | Question | Answer |
 |---|----------|--------|
-| 0.1 | Postgres hosting | |
-| 0.2 | Postgres version | |
-| 0.3 | Driver / ORM | |
-| 0.4 | Migration tool | |
-| 0.5 | History scope | |
-| 0.6 | Editing path | |
-| 0.7 | Distribution: read-only or editable in app | |
+| 0.1 | Postgres hosting | Test: Dockerised Postgres on your machine. Production: company-provided machine, built later (recommended setup accepted) |
+| 0.2 | Postgres version | Match the company machine's major version; test DB pinned to it |
+| 0.3 | Driver / ORM | `psycopg` v3 + plain SQL, no ORM (accepted) |
+| 0.4 | Migration tool | Numbered plain `.sql` files + tiny apply script (accepted) |
+| 0.5 | History scope | Last N months; N decided later. Risks logged in the status board Remarks |
+| 0.6 | Editing path | Follows from 0.7: edits happen in the website UI (see Step 8). SQL client stays as a developer-only tool. Pending your confirmation |
+| 0.7 | Distribution: read-only or editable in app | Editable via the website UI, with user roles limiting who can do what |
 
 ## Open questions / risks
 
