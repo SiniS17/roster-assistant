@@ -1,259 +1,275 @@
-# KHDT → Roster (website version) — How it works
+# Roster Assistant — How it works
 
-A small internal website for VAECO. You upload the **KHDT** (training-plan)
-Excel file; it's matched against the **Roster**, which now lives in a Google
-Sheet, and the matching days get marked directly in that Sheet.
+A small internal website for VAECO. It does three things, all driven by Google Sheets:
 
-## What you need before running it
+1. **Roster** — shows the monthly roster of the four squads in one table (read-only).
+2. **KHDT → Roster** — you upload the monthly **KHDT** (training-plan) Excel file; the app works out which roster cells should be marked as training days, shows them as **proposed changes** on the roster, lets you keep or reject each one, and only then writes the kept ones into the squads' Google Sheets.
+3. **Daily Distribution** — shows, for a chosen day, which person is assigned to which zone, read from the squads' day tabs (read-only).
 
-**1. The KHDT file** — an `.xlsx` export of the monthly training plan. It
-needs a header row (anywhere in the first 30 rows) containing at least these
-Vietnamese column headers (exact wording, spacing, and column order don't
-matter — they're found by searching):
-- `Mã NV` — employee ID
-- `Họ tên` — name
-- `Bắt đầu` / `Kết thúc` — training start/end date
-- `Phòng/đội`, `Tên KĐT`, `Mã lớp học`, `Lí do` are read too, if present
+There is no database and nothing is stored on the server. The Google Sheets are the single source of truth; the only things kept outside them are a short-lived in-memory cache on the server and, in each person's own browser, the KHDT review in progress and a few display preferences.
 
-**2. The Roster** — a Google Sheet, not a file upload. It needs a header row
-with `ID` and `NAME` (or `NAME & SURNAME`) columns, plus a run of real date
-cells across that same row — one per day of the month. Each person's row
-below that has their employee ID and one cell per day.
+```
+ KHDT .xlsx ──upload──►  /api/khdt/preview ──► proposed changes (signed, nothing written)
+                              │                        │
+                              │ reads                  ▼
+                              ▼                 browser: highlight on roster,
+              1st sheet of each squad's         Keep / Reject (saved in localStorage)
+              Google spreadsheet  ◄───────────────────┐
+                              ▲                        │ kept changes
+                              │ re-checks + writes     ▼
+                              └────────────────  /api/khdt/export
+```
 
-**3. Access to that Sheet.** This tool authenticates as a Google *service
-account*, not as you — so the Sheet must be explicitly shared with the
-service account's email address (Editor access), the same way you'd share
-it with a colleague. See **Setup**, below.
+---
 
-## What the code does to your data, step by step
+## 1. What you need before running it
 
-1. **Finds the header rows automatically** in both the KHDT file and the
-   Roster sheet, by searching for the column labels above — not tied to a
-   fixed row number, so reordered/reshuffled columns still work.
+**A. Google access (service account).** The app signs in to Google as a *service account*, not as a person. Every spreadsheet it touches must be shared with that account's email address (it looks like `something@project-id.iam.gserviceaccount.com`):
 
-2. **Matches people by Employee ID.** For every KHDT row, the ID is looked
-   up in the Roster. If found, the Name is compared too, only as a sanity
-   check — a mismatch is logged as a warning, but the ID is trusted and the
-   row is still processed.
+| Spreadsheet | Needed for | Share as |
+|---|---|---|
+| Each of the 4 squads' spreadsheets | Roster page, Daily Distribution, KHDT preview | **Viewer** is enough to read |
+| Each of the 4 squads' spreadsheets | **Exporting** KHDT changes | **Editor** |
 
-3. **Works out which day(s) to mark:**
-   - Normally, every day from `Bắt đầu` to `Kết thúc` (inclusive) that
-     falls inside the Roster's date range gets marked.
-   - **Exception:** if the `Lí do` note pins down one specific day — phrased
-     as *"Lên lớp sáng/chiều &lt;date&gt;"* ("attend class in the
-     morning/afternoon of &lt;date&gt;") — only that single day is marked,
-     even if `Bắt đầu`/`Kết thúc` span a wider range (e.g. a week of
-     self-study with one actual class day in it).
+**B. The squads' spreadsheets.** Their links are listed in `config.py` (`DISTRIBUTION_SHEET_URLS`, one per squad, named by `DISTRIBUTION_SHEET_NAMES`). The **1st sheet** of each spreadsheet is that squad's monthly roster; the other sheets are day tabs (see §5 and §6 for the exact layout).
 
-4. **Builds the marker text**, e.g. `H ATHK`, `H VHDN CHIỀU` — the course
-   abbreviation (edit `COURSE_ABBREVIATIONS` / `COURSE_NAME_ABBREVIATIONS`
-   in `config.py`) prefixed with `H`, with `SÁNG`/`CHIỀU` appended when the
-   note says which half of the day.
+**C. The KHDT file** — an `.xlsx` export of the monthly training plan (first worksheet is read). See §4.1.
 
-5. **Combines same-day overlaps.** If two different KHDT rows land the same
-   person on the same day (typically one morning class, one afternoon
-   class), they're written as one combined marker instead of one
-   overwriting the other, e.g. `H VHNT SÁNG-VHDN CHIỀU`.
+---
 
-6. **Saturdays and Sundays are always `N`** (day off), regardless of what
-   KHDT says — course markers never get written on a weekend. Weekday
-   course markers are written in **red**; the weekend `N` is written in
-   **black**.
+## 2. Setup (Google credentials)
 
-7. **Handles what's already in the cell:**
-   - Empty cell → marker is written.
-   - Already has the exact course, or a subset of a combined marker → left
-     alone (logged as "already marked", not duplicated).
-   - Already has a **black** `N` → treated as an ordinary blank day off and
-     overwritten with the course (or with `N` again on a weekend) — this
-     is not a conflict.
-   - Already has a **red** `N` (a guaranteed/protected day off) or some
-     unrelated content → by default this is a **conflict**: nothing is
-     overwritten, and the intended value is appended instead
-     (`existing-new`) so no information is lost. Tick **"Overwrite cells
-     that already have content"** on the form to force a plain overwrite
-     instead.
-
-8. **A known KHDT date bug is corrected automatically.** Some KHDT date
-   cells are stored as `YYYY-DD-MM` (day/month swapped from the usual
-   order) rather than `YYYY-MM-DD`. Real Excel date cells are un-swapped
-   automatically; plain slash-text dates (`10/09/2026`) are already in
-   normal order and read as-is. Anything that still looks implausible
-   afterwards (wrong month/year for this Roster) is logged as a `[CHECK]`
-   line rather than silently guessed at.
-
-9. **Writes the result straight back to the Google Sheet** — only the
-   individual cells that changed, preserving everything else on the sheet
-   (formatting, other columns, other rows) untouched.
-
-10. **Produces a downloadable `.xlsx` log** with three tabs: a per-person
-    event log (conflicts, overlaps, name mismatches, etc.), a run summary,
-    and the raw console log — plus a results page in the browser showing
-    the same summary.
-
-Nothing is ever written to KHDT — it's read-only input.
-
-## Roster page (read-only, built from the 4 squads' spreadsheets)
-
-The main page (`/`) no longer reads the KHDT sheet's Main tab. It is built from the **1st
-sheet of each squad's spreadsheet** - the same four spreadsheets as Daily Distribution
-(`DISTRIBUTION_SHEET_URLS` / `DISTRIBUTION_SHEET_NAMES` in `config.py`) - using view-only
-access (a Viewer share is enough).
-
-- One row per employee; the **Đội** filter picks a squad (Squad 1 ... Squad 4). The day
-  columns are the union of every squad's dates.
-- A squad's 1st sheet needs a header row with `ID` + `NAME` and a real date per day column. If
-  the NAME header can't be read (Squad 1's sits under the logo), the column just left of `ID`
-  is used.
-- Only rows with an employee ID are kept, and a squad's list stops at the `NV TĂNG CƯỜNG`
-  (reinforcement) row, so summary rows and borrowed staff don't appear.
-- Someone listed in two squads is shown once, in the first squad (the page says so).
-- A squad that can't be read is skipped and named in a yellow bar; the other squads still show.
-- The reload button refetches (otherwise a 60 s cache applies). "Open Google Sheet" opens the
-  filtered squad's spreadsheet.
-
-## KHDT -> Roster: review first, export when you are happy
-
-The KHDT upload (side menu -> **KHDT -> Roster**) no longer writes to the old Main/temp sheet. It
-proposes changes to the **same four squad sheets the roster page shows**:
-
-1. **Run.** The KHDT file is matched against each squad's 1st sheet with the usual rules (markers,
-   weekend `N`, conflicts, `--force`). Nothing is written to Google Sheets. The squad sheets are read
-   fresh, and someone listed in two squads belongs to the first one (as on the page).
-2. **Review.** Every cell that would change is highlighted on the roster: dashed + flickering green =
-   undecided, solid green = kept, dotted grey = rejected, amber outline = it would replace or extend
-   something that is already in the cell. Click a highlighted box for **Keep / Reject / Undecided**
-   (a multi-day box acts on all its days), or use the **Review list** (filter, search, per-cell
-   buttons) and the bulk buttons **Keep undecided / Reject undecided**. "Only changed rows" hides
-   everyone else.
-3. **Your decisions are yours alone.** They (and the proposed changes) are stored in this browser's
-   `localStorage`, so a reload keeps them, while other people and other devices/browsers see the plain
-   roster. Nothing about the review is stored on the server. Clearing the browser's site data or pressing
-   **Discard** forgets it.
-4. **Export.** **Export N kept -> sheets** writes only the kept cells into the real squad sheets (the 1st
-   sheet of each of the four spreadsheets; each must be shared with the service account as **Editor**).
-   Before writing, every cell is re-read: if the employee moved to another row, the date column moved, or
-   somebody edited the cell after the run, that cell is **skipped and reported**, never overwritten. The
-   page then reloads from the sheets; written cells equal the proposal, so they leave the review by
-   themselves.
-5. **Out of date.** If a cell is edited in the sheet after the run, its change turns "out of date" and is
-   ignored (and cannot be exported). Run KHDT again to refresh. Running KHDT again replaces the current
-   review (the page asks first).
-
-Safety: every proposed change is signed with the app's `FLASK_SECRET_KEY`, and export only writes
-changes that carry a valid signature - so set a real `FLASK_SECRET_KEY` in production. A squad whose
-file is an uploaded `.xlsx` (not a native Google Sheet) can be reviewed but not exported.
-
-The old flow (`POST /run`, writing to the KHDT sheet's `temp` tab) still exists in `app.py` but the
-page no longer uses it.
-
-## Daily Distribution page (read-only)
-
-Side menu → **Daily Distribution** (or open `/#distribution`). It reads several
-other Google spreadsheets - one per aircraft/check - and shows who goes to
-which zone on a chosen day. It never writes to them.
-
-**Each spreadsheet is expected to look like this**
-- **1st sheet** - general info. Found by label, so exact cells don't matter:
-  `A/C`, `CHECK`, `DATE` (e.g. `21-29 SEP 2026`, or two date cells),
-  `FOREMAN`, `TRỰC ĐỘI`, `DOCK PLANNER`, `SHIFT / TECH SUPP` (name, then phone
-  next to it or below it), plus any rows that hold an employee ID and a phone
-  number - that is the phone book used for the PHONE column.
-- **If the 1st sheet is a monthly roster** (header row with `ID` + `NAME`, one date
-  column per day) the crew header is read from it for the selected day: anyone whose
-  cell holds `TĐ` (Trực đội), `PPC` (Dock planner) or `FM` (Foreman) - alone or with
-  a shift/aircraft, like `TĐ-SAG`, `TĐ @16:00`, `A326-FM`. Several people can share
-  a role. These roster codes win over the `FOREMAN:`-style labels; the codes come
-  from `DISTRIBUTION_ROLE_MARKERS` in `config.py`.
-- **Every other sheet** - one day, named `<A/C>-<MMM><DD>` (e.g. `B218-SEP21`).
-  A zero-padded day is fine (`A326-OCT09`, `A326-OCT011` = Oct 11). Text before the
-  aircraft is kept as the day's CHECK (`WO COMP A611-OCT07` -> A/C `A611`, CHECK
-  `WO COMP`). A tab named only with a number (`1`, `14`) is that day of the month
-  the 1st sheet is a roster for (read from `THÁNG 10.2026` in its top rows, or from
-  a tab name like `Doi 3 Thang 10`, or - when the 1st sheet has no month text, like
-  Squad 1/4's `ROSTER` - the dates over its day columns). The A/C shown is the one in
-  each day's own tab name, else the `A/C:` on the day tab itself; with neither, the page
-  shows just the date. It holds `ORD / NAME AND SURNAME / ID / POSITION / REMARK` tables split by
-  section rows (`ZONE 128`, `ZONE 128 @16H00`, `ZONE AVI`, `STRUCTURE PAINTING`...).
-  `ZONE ...` sections fill the left column (`@16H00`-style ones get a sun/moon
-  icon); the right column always lists Structure Sheet Metal / Composite /
-  Painting and Cabin, showing "No personnel assigned" until a section with that
-  name has people. A red REMARK in the sheet stays red on the page.
-- **Squad 1/4 layout**: the 1st sheet is `ROSTER`; day tabs are named `1`, `2` ...
-  Each day tab has its own info block (`A/C: A864`, `FOREMAN:`, `BCH ĐỘI` = Trực đội,
-  `TECH SUPPORT`, `DOCK PLANNER:`, each with `PHONE:` next to it; `#N/A` = nobody), then two
-  tables side by side with `ORD / NAME AND SURNAME / VAECO ID / POSITION / PHONE / REMARK`
-  (any `<word> ID` header works). Section titles like `A864-128` count as zones. A note in
-  REMARK/PHONE/POSITION on a row with no person is not a section. A person row with an ID
-  but no name yet is still listed. For the crew, labels on the day tab win over the
-  `TĐ`/`PPC`/`FM` codes in the roster.
-- Sheets that don't match the name pattern (notes, templates) are ignored.
-
-**Setup**
-1. Ask each owner to share their spreadsheet with the service-account email as
-   **Viewer** (the same bot email already used for the Roster; it only needs
-   view access here - the page asks Google for read-only scopes).
-2. Put the links in `DISTRIBUTION_SHEET_URLS` in `config.py` (one per line, as
-   many as you need), or set the `DISTRIBUTION_SHEET_URLS` environment variable
-   (one URL per line or comma-separated) - the variable wins if both are set.
-3. Enable the **Google Drive API** in the same Google Cloud project *only if*
-   some of those files are uploaded `.xlsx` files that were opened in Google
-   Sheets (the Sheets API can't read those; the page then downloads them
-   through Drive instead). Native Google Sheets need nothing extra.
-
-A spreadsheet that can't be read shows a `!` on its tab with the reason; the
-others keep working. Data is cached for `DISTRIBUTION_CACHE_SECONDS` (60 s);
-the reload button always fetches fresh data.
-
-## Setup (Google Sheets access)
-
-1. In Google Cloud Console, create (or reuse) a project, enable the
-   **Google Sheets API**, and create a **Service Account**.
-2. Create a JSON key for that service account and download it.
-3. Open the Roster Google Sheet and **Share** it with the service account's
-   email address (looks like `something@project-id.iam.gserviceaccount.com`),
-   giving it **Editor** access.
+1. In Google Cloud Console create (or reuse) a project, enable the **Google Sheets API**, and create a **Service Account**.
+2. Create a JSON key for it and download it.
+3. Share each squad spreadsheet with the service account's email (Viewer to read, Editor if you want to export KHDT changes).
 4. Give the app the credentials, either:
-   - **Local dev:** save the JSON key file somewhere and set
-     `GOOGLE_APPLICATION_CREDENTIALS=./path/to/key.json` in `.env`.
-   - **Hosted (e.g. Vercel):** paste the entire JSON key's contents as a
-     single-line environment variable `GOOGLE_SERVICE_ACCOUNT_JSON`.
-5. Copy `.env.example` to `.env` and fill in the values (also set
-   `FLASK_SECRET_KEY` to any random string).
+   - **Local:** save the key file and set `GOOGLE_APPLICATION_CREDENTIALS=./path/to/key.json` in `.env`.
+   - **Hosted (e.g. Vercel):** paste the whole key as a **single-line, minified** JSON into the environment variable `GOOGLE_SERVICE_ACCOUNT_JSON`. Do not wrap it in extra quotes, and redeploy after setting it. If the value isn't valid JSON the app says so (with the length and first characters) instead of failing obscurely.
+5. Copy `.env.example` to `.env` and set `FLASK_SECRET_KEY` to a long random string. **This is not optional in production**: it is the key that signs every proposed KHDT change (see §4.4). If it changes between a KHDT run and the export, the export is refused and you have to run KHDT again.
+6. Enable the **Google Drive API** in the same project *only if* some squad file is an uploaded `.xlsx` that was opened in Google Sheets rather than a native Google Sheet. The Sheets API can't read those, so the app downloads them through Drive (read-only). Native Google Sheets need nothing extra.
 
-## Running it locally
+Scopes the app asks for: full Sheets access (only used by the KHDT export and the legacy flow), and **read-only** Sheets/Drive access for everything else — so the Roster page and Daily Distribution can never modify a spreadsheet.
+
+## 3. Running it locally
 
 ```
 pip install -r requirements.txt
 python app.py
 ```
 
-Then open `http://localhost:5000`, open the side menu -> **KHDT -> Roster**, upload the KHDT
-file and click **Run**. Review the highlighted changes on the roster, then **Export** the ones you kept.
+Open `http://localhost:5000`. The side menu has **Roster**, **Daily Distribution** and **KHDT → Roster**. `PORT` can be set in the environment (default 5000).
 
-## Configuration
+### Configuration (`config.py`)
 
-Edit `config.py`:
-- `DEFAULT_ROSTER_SHEET_URL` — only used by the old `/run` flow now (the KHDT sheet with Main/temp).
-- `DISTRIBUTION_SHEET_URLS` / `DISTRIBUTION_SHEET_NAMES` — the Daily Distribution
-  spreadsheets and their tab names, matched by position (1st URL = Squad 1 ...
-  last = Squad 4).
-- `DISTRIBUTION_ROLE_MARKERS` — roster codes for the crew roles: Trực đội = `TĐ`,
-  Dock planner = `ppc`, Foreman = `fm`.
-- `COURSE_ABBREVIATIONS` / `COURSE_NAME_ABBREVIATIONS` — marker shorthand.
-- `MARKER_PREFIX` — defaults to `H`.
-- `LOG_COLUMN_HEADERS` / `LOG_EVENT_LABELS` — labels used in the log file.
+- `DISTRIBUTION_SHEET_URLS` / `DISTRIBUTION_SHEET_NAMES` — the four squad spreadsheets and their display names, matched **by position** (1st URL = Squad 1 … last = Squad 4). `DISTRIBUTION_SHEET_URLS` can also be set as an environment variable (one URL per line or comma-separated), which wins over the file.
+- `DISTRIBUTION_ROLE_MARKERS` — roster codes for crew roles: Trực đội = `TĐ`, Dock planner = `ppc`, Foreman = `fm`.
+- `DISTRIBUTION_CACHE_SECONDS` — server cache lifetime (60 s).
+- `COURSE_ABBREVIATIONS` / `COURSE_NAME_ABBREVIATIONS` — short labels for courses.
+- `MARKER_PREFIX` — the prefix of every course marker (default `H`).
+- `LOG_COLUMN_HEADERS` / `LOG_EVENT_LABELS` — the wording used in the downloadable log.
+- `DEFAULT_ROSTER_SHEET_URL` — only used by the legacy Main/temp flow (§8).
 
-## Project files
+---
+
+## 4. Roster page and KHDT → Roster
+
+### 4.1 The Roster page (read-only)
+
+`GET /api/roster` builds one table from the **1st sheet of each squad's spreadsheet**:
+
+- **Finding the table.** In the first 30 rows the app looks for a header row with an **ID** column and a **NAME** column plus one date per day. Headers are matched ignoring accents, case and punctuation, and several wordings are accepted (`ID`, `MÃ VAECO`, `VAECO ID`, `HỌ VÀ TÊN`, `NAME AND SURNAME`, …). Day columns are real dates; if the header only holds bare day numbers (`01`…`31`), those days are read as belonging to the **current month**. If the NAME header can't be read (Squad 1's sits under a logo), the nearest mostly-text column to the left of ID is used.
+- **Who is listed.** Only rows with a real employee ID (letters + digits, like `VAE12345`). A squad's own list **stops at the `NV TĂNG CƯỜNG` (reinforcement) row**; everyone below belongs to other squads or is a summary.
+- **Merging squads.** One row per employee, with the squad's name in an **Đội** column (the page's Đội filter picks a squad). Day columns are the union of every squad's dates. Anyone listed in two squads is shown once, in the first squad, and a note says so.
+- **Extra columns.** Any other labelled column left of the first date (position, group, …) is shown as small text under the employee's name (STT/TT/No/# columns are skipped).
+- **Failures are isolated.** A squad that can't be read is skipped and named in a yellow bar; the others still show.
+- **Page features.** Search by name or ID, Đội filter, zoom, light/dark theme, a headcount/training-days/guaranteed-days-off strip, a colour legend, and a reload button (otherwise the server's 60 s cache applies). Cell types are shown differently: `H …` course markers, black `N`, red `N` (guaranteed day off), and other codes (each gets its own colour). "Open Google Sheet" opens the filtered squad's spreadsheet.
+
+### 4.2 The KHDT file
+
+The first worksheet is read. Somewhere in its first 30 rows there must be a header row containing at least these Vietnamese headers (exact wording, spacing, and column order don't matter — they're found by searching, ignoring accents):
+
+- `Mã NV` — employee ID
+- `Họ tên` — name
+- `Bắt đầu` / `Kết thúc` — start / end date
+- `Phòng/đội`, `Tên KĐT`, `Mã lớp học`, `Lí do` are read too if present.
+
+Rows without an employee ID are ignored. If the end date is missing or earlier than the start date, the start date is used. KHDT is **never written to**.
+
+**A known KHDT date quirk is corrected automatically.** KHDT date cells are stored day/month-swapped (`YYYY-DD-MM`). Real Excel date cells are un-swapped; slash text like `10/09/2026` is already normal `DD/MM/YYYY` and read as is; hyphen text follows the file's `YYYY-DD-MM` convention. Anything that still looks implausible for the roster's month (more than a month away) is logged as a `[CHECK]` line rather than silently guessed.
+
+### 4.3 What the matching rules do
+
+This is the same engine for every KHDT run (`engine.mark_roster_grid`).
+
+1. **Match by employee ID.** Each KHDT row is looked up in the squad's roster. If the name also differs (accents/case/spacing ignored) it's logged as a `[WARN]` name mismatch — the ID is trusted and the row is still processed.
+2. **Which days to mark.** Every day from `Bắt đầu` to `Kết thúc` inclusive that falls inside the roster's date columns. **Exception:** if the `Lí do` note pins one day — phrased *"Lên lớp sáng/chiều &lt;d/m/yyyy&gt;"* ("attend class in the morning/afternoon of …") — only that day is marked, even if the range is wider (e.g. a week of self-study with one actual class day). A row whose dates don't touch the roster at all is logged as "no date overlap".
+3. **The marker text.** `H` + the course label, e.g. `H ATHK`.
+   - With a class code (`Mã lớp học`), the last two `/`-separated segments are dropped and the rest is looked up in `COURSE_ABBREVIATIONS`.
+   - Without one, the course name is looked up in `COURSE_NAME_ABBREVIATIONS` (accents, case and repeated spaces ignored); if it isn't there, a short label is generated from the name (up to 8 meaningful words, acronym-like words kept, others reduced to initials, max 24 characters); if there's nothing at all, `?`.
+   - ` SÁNG` / ` CHIỀU` is appended when the note says which half of the day.
+4. **Same-day overlaps are combined.** If two KHDT rows put the same person on the same day (typically a morning class and an afternoon class) they become one marker instead of one overwriting the other, parts joined with `-` and ordered sáng → chiều → others, e.g. `H VHNT SÁNG-VHDN CHIỀU`.
+5. **Weekends are always `N`.** Saturdays and Sundays get a black `N` (day off) regardless of the course; course markers are never written on a weekend. Weekday course markers are written in **red**.
+6. **What's already in the cell:**
+
+| Cell currently holds | What happens |
+|---|---|
+| Empty | The marker is written. |
+| The same course, or part of a combined marker | Not duplicated; logged "already marked". Different parts are merged into the existing marker. |
+| A **black** `N` | Treated as an ordinary day off and replaced by the course (or by `N` again on a weekend). Not a conflict. |
+| A **red** `N` (guaranteed day off), or any unrelated text | **Conflict.** By default nothing is overwritten and the intended value is **appended** (`existing-new`) so no information is lost. With **"Overwrite cells that already have content"** ticked, it is replaced instead. |
+| (Weekend) a course marker | Replaced by `N`, no conflict. |
+
+Every decision is written to the run log (§4.7).
+
+### 4.4 Step 1 — Run (preview, writes nothing)
+
+Side menu → **KHDT → Roster**, choose the file, optionally tick *Overwrite cells that already have content*, and press **Run**. The browser posts the file to `POST /api/khdt/preview`, which (`khdt_review.preview`):
+
+1. Reads the 1st sheet of each squad **fresh** (not from cache), in parallel.
+2. Works out each squad's **own people** — IDs above the reinforcement row. A person in two squads belongs to the first one.
+3. Gives each squad only the KHDT rows whose ID is one of its own people, and runs the matching rules above against that squad's own rows.
+4. Turns each resulting cell update into a **change**: who, which squad, which date, row/column, what the cell says now (`old`), what it would say (`new`), its colour, and a **kind**:
+   - `new` — the cell was empty,
+   - `update` — an existing course marker is extended,
+   - `dayoff` — a black `N` is replaced,
+   - `conflict` — something else (including a red `N`) is in the cell and is replaced or appended to.
+   Cells that already hold exactly the proposed value and colour are dropped.
+5. **Signs every change** with an HMAC (SHA-256, using `FLASK_SECRET_KEY`) over `squad, id, date, row, col, old, new, newColor`.
+6. Returns the changes, per-squad counts, the statistics, the log lines, and the `.xlsx` log (base64).
+
+`no_id_match` in the statistics counts KHDT rows whose ID isn't an own person of *any* squad. "Marked" counts what the engine marked before the "already says exactly this" filter, so it can be slightly higher than the number of proposed changes.
+
+A squad that couldn't be read is reported with a warning and skipped; the others still produce changes.
+
+### 4.5 Step 2 — Review (in your browser only)
+
+The roster page lays the proposed values over the live roster:
+
+- **dashed, flickering green** outline = undecided
+- **solid green** = kept
+- **dotted grey** = rejected (an empty cell with a rejected proposal shows the value struck through; click to reconsider)
+- **amber outline** = it would replace or extend something already in the cell
+
+Click a highlighted box for **Keep / Reject / Undecided** (a multi-day box acts on all its days), or use the **Review list** (filter: undecided / kept / rejected / overwrites existing / out of date; search by name or ID) and the bulk buttons **Keep undecided / Reject undecided**. *Only changed rows* hides everyone else. **Discard** forgets the whole review (nothing was written).
+
+**Your decisions are yours alone.** The proposed changes and your decisions are stored in this browser's `localStorage` (key `roster.khdt.review.v1`), so a reload keeps them, and a second tab of the same browser stays in sync. Other people and other browsers/devices see the plain roster. Nothing about the review is stored on the server. Clearing the site's data or pressing Discard forgets it; if the browser blocks storage, the page warns that decisions will be lost on reload. Running KHDT again replaces the current review (the page asks first).
+
+Each time the roster loads, every stored change is compared with the live sheet:
+
+- cell still holds what the preview saw → **active**;
+- cell already shows the proposed value (for example after an export) → the change **leaves the review by itself**;
+- cell was edited after the run → **out of date**: ignored and cannot be exported;
+- the person isn't on the page (e.g. that squad failed to load) → **not shown**.
+
+### 4.6 Step 3 — Export (writes only what you kept)
+
+**Export N kept → sheets** posts the kept changes to `POST /api/khdt/export` (`khdt_review.export`):
+
+1. **Signature check.** Changes whose signature doesn't verify are refused and counted ("refused — run KHDT again"). So a hand-made request can't put arbitrary text into the roster.
+2. **Per squad, re-read the live sheet** and check each change: the row is still inside the squad's own people, the **same employee is on that row**, the **date column hasn't moved**, and the **cell text is still what the preview saw**. Any change failing a check is **skipped and reported** with the reason — never overwritten.
+3. **Write** the surviving cells (text and font colour) in batches of 500 into the squad's first sheet. Only those cells are touched; everything else on the sheet is left as it is.
+4. Clear the server cache, so the page's reload straight afterwards shows what was written.
+
+Results are shown per squad (written / skipped / error). A squad whose file is an uploaded `.xlsx` (not a native Google Sheet) can be reviewed but **not exported**; a missing Editor share is reported as a permission error for that squad only.
+
+### 4.7 The run log
+
+Every run produces a downloadable `.xlsx` (the dialog's *Download log* button) with three tabs: **Log** (one row per person/date with events, reasons and details, labelled by `LOG_EVENT_LABELS`), **Run summary** (the counts), and **Console log** (the raw messages: `[WARN]`, `[SKIP]`, `[CHECK]`, `[NOTE DATE]`, `[NO OVERLAP]`, `[OVERLAP]`, `[OVERWRITE DAY OFF]`, `[CONFLICT]`, `[GUARANTEE DAY OFF CONFLICT]`, `[ALREADY MARKED]`). The log is generated in memory and sent to the browser; no file is kept on the server, which suits serverless hosting.
+
+---
+
+## 5. Daily Distribution (read-only)
+
+Side menu → **Daily Distribution** (or open `/#distribution`). It reads the same four squad spreadsheets and shows who goes to which zone on a chosen day. It never writes. Squads appear as tabs (a `!` marks one that couldn't be read, with the reason); a strip of day buttons lists that spreadsheet's days; the last squad you looked at is remembered in your browser.
+
+**Everything is found by searching labels, not fixed cell addresses**, so moved columns or extra blank rows don't break it.
+
+### 5.1 Which tabs are days
+
+- **1st sheet** — general info and/or the monthly roster (see below).
+- **Day tabs** — named `<A/C>-<MMM><DD>`, e.g. `B218-SEP21`. A zero-padded day is fine (`A326-OCT09`; `A326-OCT011` = 11 Oct). Text before the aircraft is kept as the day's CHECK (`WO COMP A611-OCT07` → A/C `A611`, CHECK `WO COMP`). The year is the one nearest the roster's month (or today).
+- **Number-only tabs** (`1`, `14`) are that day of the month the 1st sheet is a roster for. That month is read from the roster's date header row, else from text such as `THÁNG 10.2026` in its top rows or a tab name like `Doi 3 Thang 10`.
+- Tabs that don't match are ignored (notes, templates).
+
+### 5.2 What's read from the 1st sheet
+
+By label: `A/C`, `CHECK`, `DATE` (e.g. `21-29 SEP 2026`, or two date cells), `FOREMAN`, `TRỰC ĐỘI` (or `BCH ĐỘI`), `DOCK PLANNER`, `SHIFT / TECH SUPP` — each with a name and phone (next to it or below it; `#N/A` means nobody). Also a **phone book**: any row holding an employee ID and a phone number.
+
+If the 1st sheet is a **monthly roster**, the crew for the selected day is read from that day's column: anyone whose cell holds `TĐ` (Trực đội), `PPC` (Dock planner) or `FM` (Foreman), alone or with a shift/aircraft (`TĐ-SAG`, `TĐ @16:00`, `A326-FM`). Several people can share a role.
+
+### 5.3 What's read from a day tab
+
+Tables with `ORD / NAME AND SURNAME / ID / POSITION / REMARK` columns (any `<word> ID` header works, `PHONE` optional), possibly two side by side. Rows are split into sections by title rows:
+
+- **Zones** — titles like `ZONE 128`, `ZONE 128 @16H00`, or aircraft-zone titles like `A864-128`. `@16H00`-style ones show a sun/moon icon.
+- **Other sections** — `STRUCTURE SHEET METAL`, `STRUCTURE COMPOSITE`, `STRUCTURE PAINTING`, `CABIN`… The right-hand column always lists these shops.
+- A person row has a valid ID, or a name plus a numeric ORD with no ID yet. A stray note in REMARK/PHONE/POSITION on a row with no person is not a section title. A **red REMARK** stays red on the page.
+
+The day tab may carry its own info block (Squad 1/4: `A/C: A864`, `FOREMAN:`, `BCH ĐỘI`, `TECH SUPPORT`, `DOCK PLANNER:`, each with `PHONE:`).
+
+**Precedence for the crew:** labels on the day tab → `TĐ/PPC/FM` codes in the roster → labels on the 1st sheet. **Aircraft shown:** the one in the tab name → the `A/C:` on the day tab → the 1st sheet's; with none, the page shows just the date. **Phones:** the table's PHONE column, then the phone book.
+
+The page notes any of the fixed zones/shops (128, 567, 34, AVI, and the structure/cabin shops) that have nobody assigned, including when titles combine zones (`128/567`, `34567`, `ALL ZONES`).
+
+### 5.4 Layouts in the wild
+
+- **Squad 1/4:** the 1st sheet is `ROSTER`; day tabs are named `1`, `2`, …; each day tab has its own info block and two side-by-side tables; section titles like `A864-128` count as zones.
+- **Other squads:** the 1st sheet is general info (or a roster); day tabs are `B218-SEP21`-style.
+
+---
+
+## 6. How Google data is read
+
+- **One reader for everything.** The Roster page, Daily Distribution and the KHDT preview all use the same code (`distribution.py`) to open each squad's spreadsheet and read its 1st sheet, so they always agree on what the roster looks like.
+- **Cache.** Reads are cached in the server's memory for `DISTRIBUTION_CACHE_SECONDS` (60 s). Reload buttons add `?refresh=1` to skip it; the KHDT preview and export always read fresh; an export clears the cache. On serverless hosting each instance has its own cache. The page also reuses a fetched day for 60 s.
+- **Parallel and isolated.** Squads are read on up to 8 threads (each with its own client, because the Google client isn't thread-safe). One unreadable squad is reported but doesn't hide the others.
+- **Values and colours.** Values are read unformatted, with dates as serial numbers; each cell's font colour is read separately (that's how red vs black `N` and red remarks are told apart).
+- **Large responses.** Very large sheets with many formatted-but-empty cells compress extremely well, so the library's compression-ratio check is relaxed (the absolute size limit stays on).
+
+---
+
+## 7. Hosting notes
+
+The app is a Flask app that keeps nothing on disk, so it runs on serverless hosts such as Vercel. Credentials come from environment variables (`GOOGLE_SERVICE_ACCOUNT_JSON`, `FLASK_SECRET_KEY`); the log download is a base64 payload, not a stored file.
+
+---
+
+## 8. The old Main/temp flow (still in the code, not used by the page)
+
+Before the squad-based review, a KHDT run wrote into a single "KHDT sheet" that had a **Main** tab (the live roster) and a **temp** tab. That code is still there:
+
+- `POST /run` — loads the KHDT file, takes **Main** (or the existing **temp** if "keep" is ticked) as the base, rebuilds **temp** as a copy of Main (unless keeping), writes the changes into **temp** only (Main is never touched), and answers JSON for a `fetch` call or the old `result.html` page for a plain form post.
+- `GET /api/roster?url=<sheet url>&gid=<tab id>` — reads one Google Sheet tab and, if it has Main and temp tabs, reports which cells differ between them.
+- `roster_view.py` holds the helpers for this (listing tabs, rebuilding temp, diffing).
+
+The current page calls neither endpoint. `DEFAULT_ROSTER_SHEET_URL` and `templates/result.html` + `static/style.css` exist only for this flow.
+
+---
+
+## 9. Project files
 
 | File | Purpose |
 |---|---|
-| `app.py` | Flask routes: roster page, `/api/roster`, `/api/khdt/preview`, `/api/khdt/export`, `/api/distribution*`, old `/run` |
-| `khdt_review.py` | KHDT -> proposed changes on the squads' sheets (signed), and the checked export |
-| `engine.py` | All KHDT-parsing and Roster-matching/marking logic |
-| `sheets_client.py` | Google Sheets read/write (service-account auth) |
-| `distribution.py` | Daily Distribution: reads the other spreadsheets, parses info + day tabs |
-| `squad_roster.py` | The roster page: merges the 1st sheet of each squad's spreadsheet |
+| `app.py` | Flask routes: `/` (the page), `/api/roster`, `/api/distribution`, `/api/distribution/day`, `/api/khdt/preview`, `/api/khdt/export`, legacy `/run` |
+| `engine.py` | KHDT parsing, header detection, and all the matching/marking rules (§4.2–4.3) |
+| `khdt_review.py` | KHDT → proposed changes on the squads' sheets (signed), and the checked export |
+| `squad_roster.py` | Builds the combined roster for the Roster page from the squads' 1st sheets |
+| `distribution.py` | Opens and caches the squads' spreadsheets; parses info blocks and day tabs for Daily Distribution; shared reader for the roster and KHDT |
+| `roster_view.py` | Turns a sheet grid into the roster JSON payload; tab helpers for the legacy Main/temp flow |
+| `sheets_client.py` | Google auth (service account), Sheets/Drive clients, reading a grid with colours, writing cells |
 | `log_workbook.py` | Builds the downloadable `.xlsx` run log |
-| `config.py` | Abbreviations, log labels, default Sheet URL |
-| `templates/`, `static/` | Upload form + results page |
+| `config.py` | Squad spreadsheet URLs/names, role codes, abbreviations, log labels |
+| `templates/index.html` | The whole single-page UI (roster, review, distribution; its own CSS and JS) |
+| `templates/result.html`, `static/style.css` | Legacy result page for `/run` only |
+
+---
+
+## 10. Things worth knowing
+
+- **Review = proposal, not a draft on the server.** If you clear your browser data mid-review, the proposals are gone (the sheets are unaffected). Re-run KHDT.
+- **Concurrent edits are safe, not merged.** If someone edits a cell between your run and your export, that cell is skipped and reported. The check compares the cell's *text*, not its colour.
+- **Reinforcement rows aren't matched.** KHDT rows are only matched against each squad's own people (above `NV TĂNG CƯỜNG`), and a person who appears in two squads is handled by the first.
+- **A red `N` on a weekend** counts as a conflict; unless *Overwrite* is ticked, `N` is appended to it (it will read `N-N`).
+- **Uploaded Excel files** as squad files: readable (needs the Drive API), but not exportable.
+- **Changing `FLASK_SECRET_KEY`** invalidates any review in progress: its changes will be refused at export.
+- **Everything is by label.** If a squad renames a header (ID/NAME, ORD, REMARK…) or the reinforcement row, add the new wording to the alias lists in `engine.py` / `distribution.py` — the page will say what it couldn't find.
