@@ -11,6 +11,8 @@ GET /api/distribution      Daily Distribution: the configured spreadsheets + the
 GET /api/distribution/day  one day's zones/people (?sheet=<n>&tab=<tab title>)
 POST /api/login, /api/logout, GET /api/me   simple login (auth.py); every GET stays open to everyone.
 POST /api/roster/save   (login required) hand edits of roster cells (roster_edit.py): staged on the page, re-checked, then written.
+POST /api/link/dry-run  (login required) roster <-> Daily Distribution link, dry run only: the cells a roster edit or a
+                 daily move would write on both sides (assignments.py). Nothing is written.
 POST /api/khdt/preview  KHDT upload -> proposed changes to the 4 squads' sheets (nothing is written).
                  The page highlights them; each person keeps/rejects them in their own browser.
 POST /api/khdt/export   (login required) writes the kept (signed, re-checked) changes into the squads' real sheets.
@@ -34,6 +36,7 @@ load_dotenv()
 from flask import Flask, flash, jsonify, redirect, render_template, request, url_for
 
 import auth
+import assignments
 import khdt_review
 import roster_edit
 from config import DEFAULT_ROSTER_SHEET_URL, DISTRIBUTION_ROLE_MARKERS
@@ -149,6 +152,24 @@ def api_roster_save():
         return jsonify(ok=False, error="There are no edits to save."), 400
     try:
         result = roster_edit.save([e for e in edits if isinstance(e, dict)], auth.current_user())
+    except Exception as e:
+        return jsonify(ok=False, error=f"{type(e).__name__}: {e}"), 400
+    return jsonify(ok=True, **result)
+
+
+@app.route("/api/link/dry-run", methods=["POST"])
+@auth.login_required
+def api_link_dry_run():
+    """Roster <-> Daily Distribution link, DRY RUN: the exact cells a roster edit or a daily move would
+    write on both sides. Reads fresh sheets, writes nothing (assignments.py)."""
+    body = request.get_json(silent=True) or {}
+    intents = body.get("intents")
+    if not isinstance(intents, list) or not intents:
+        return jsonify(ok=False, error="There is nothing to plan."), 400
+    user = auth.current_user()
+    intents = [i for i in intents if isinstance(i, dict)]
+    try:
+        result = assignments.dry_run(intents, user)
     except Exception as e:
         return jsonify(ok=False, error=f"{type(e).__name__}: {e}"), 400
     return jsonify(ok=True, **result)

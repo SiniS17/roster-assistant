@@ -48,6 +48,22 @@ DISTRIBUTION_ROLE_MARKERS = {
     "foreman": "fm",
 }
 
+# Roster <-> Daily Distribution link (assignments.py, Phase 3: dry-run only, nothing is written).
+# How each squad's roster cell relates to its day tab, matched BY POSITION like the names above:
+#   "zone"     - the roster cell holds aircraft + zone ('A864-34') and the day tab has a section with that
+#                same title (Squads 1 and 4; day tabs are named '1', '2' ...).
+#   "aircraft" - the roster cell holds the aircraft only ('A611'); the zone exists only on the day tab
+#                ('ZONE 128' on tab 'A611-OCT06') (Squads 2 and 3).
+DISTRIBUTION_SQUAD_LAYOUTS = ["zone", "aircraft", "aircraft", "zone"]
+
+# Section a person is placed in when the roster gives an aircraft but no zone (created at the bottom of
+# a table on the day tab if it does not exist yet).
+LINK_UNASSIGNED_TITLE = "UNASSIGNED"
+
+# When somebody is taken out of the Daily Distribution on purpose (not moved to another zone): False = the
+# roster cell is left as it is, True = it is cleared. (The plan left this open; False loses nothing.)
+LINK_REMOVE_CLEARS_ROSTER = False
+
 # How long (seconds) fetched sheet data is reused before asking Google again.
 # The page's reload button always bypasses this.
 DISTRIBUTION_CACHE_SECONDS = 60
