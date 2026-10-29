@@ -881,16 +881,21 @@ async function saveEdits(){
   body.innerHTML = '<p>Saving…</p>';
   if(!$('saveDlg').open) $('saveDlg').showModal();
   try{
-    const edits = items.map(({state, text, ...x}) => x);
-    const r = await fetch('/api/roster/save', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({edits}) });
+    const intents = items.map(({state, text, ...x}) => ({origin:'roster', ...x}));
+    const r = await fetch('/api/link/save', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({intents}) });
     const j = await r.json();
     if(!j.ok) throw new Error(j.error || 'Save failed');
     const lines = j.squads.map(s => {
       if(!s.error) Object.entries(S.staged).forEach(([k, x]) => { if(x.squad === s.squad && x.state === 'ok') delete S.staged[k]; });
-      const sk = s.skipped.length ? `<div class="sub">Skipped ${s.skipped.length}: ${esc(s.skipped.slice(0, 5).map(x => `${x.name || x.id} ${fmtD(x.date)} (${x.reason})`).join('; '))}${s.skipped.length > 5 ? '…' : ''}</div>` : '';
-      return s.error ? `<div class="err">${esc(s.name)}: ${esc(s.error)}</div>` : `<div class="okline">✔ ${esc(s.name)}: <b>${s.written}</b> written</div>${sk}`;
+      const mine = j.plans.filter(p => p.squad === s.squad);
+      const bad = mine.filter(p => p.status === 'blocked').map(p => `${p.name || p.id} ${fmtD(p.intent.date)} (${p.blocked})`);
+      const dayless = mine.filter(p => p.status === 'roster_only').map(p => `${p.name || p.id} ${fmtD(p.intent.date)} (${p.day_skipped})`);
+      const tabs = s.created_tabs && s.created_tabs.length ? ` New tab(s): ${esc(s.created_tabs.join(', '))}.` : '';
+      const sk = (bad.length ? `<div class="sub">Not saved ${bad.length}: ${esc(bad.slice(0, 5).join('; '))}${bad.length > 5 ? '…' : ''}</div>` : '')
+               + (dayless.length ? `<div class="sub">Roster saved but the day tab was not updated for ${dayless.length}: ${esc(dayless.slice(0, 5).join('; '))}${dayless.length > 5 ? '…' : ''}</div>` : '');
+      if(s.error) return `<div class="err">${esc(s.name)}: ${esc(s.error)}${s.partial ? ` (partly saved: roster ${s.roster_written}, day cells ${s.day_written}.${tabs})` : ''}</div>${sk}`;
+      return `<div class="okline">✔ ${esc(s.name)}: <b>${s.roster_written}</b> roster cell(s), <b>${s.day_written}</b> day-tab cell(s).${tabs}</div>${sk}`;
     });
-    if(j.invalid) lines.push(`<div class="err">${j.invalid} edit(s) were not valid and were ignored.</div>`);
     body.innerHTML = '<div class="exp-res">' + lines.join('') + '</div><div class="row"><button class="btn" id="saveDone" type="button">Close</button></div>';
     $('saveDone').onclick = () => $('saveDlg').close();
     await load(true);
