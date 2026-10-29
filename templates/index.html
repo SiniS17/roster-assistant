@@ -779,7 +779,8 @@ function renderEditBar(){
   $('codes').innerHTML = [...codes].sort().map(c => `<option value="${esc(c)}">`).join('');
   bar.innerHTML = `<span><b>${S.edit ? 'Edit mode' : 'Staged edits'}</b>: <b>${ok}</b> change(s) staged, not saved yet</span>` +
     (bad ? `<span title="The cell was edited in the sheet after you staged it, so the edit is ignored.">${bad} out of date</span>` : '') +
-    (S.edit ? '<small>Click a cell, or drag across the days of one person. Red N and H course markers are locked.</small>' : '') +
+    (S.edit ? '<small>Click a cell, or drag over several people and days, then set a code, or Copy and Paste onto others. Red N and H course markers are locked.</small>' : '') +
+    (S.editNote ? `<span>${esc(S.editNote)}</span>` : '') +
     '<span class="grow"></span>' +
     `<button class="btn sm primary" data-ed2="save" ${ok && window.AUTH && AUTH.user ? '' : 'disabled'}>Save ${ok} to sheets</button>` +
     `<button class="btn sm" data-ed2="discard" ${all.length ? '' : 'disabled'}>Discard staged</button>` +
@@ -798,61 +799,94 @@ $('editBtn').onclick = () => {
 document.addEventListener('auth-changed', () => { if(S.data) render(); else updateEditBtn(); });
 window.addEventListener('beforeunload', ev => { if(stagedAll().length){ ev.preventDefault(); ev.returnValue = ''; } });
 
-// selection: mouse down on a cell, drag along the same person's row, release to open the editor
+// selection: mouse down on a cell, drag over any block of people x days, release to open the editor.
+// Copy / Paste work on the same block (buttons in the editor, or Ctrl+C / Ctrl+V).
 let drag = null;
+S.clip = null;   // {h, w, cells:[[text|null]]}; null = a locked cell that was not copied
 const edpop = $('edpop');
+const rowIds = () => { const seen = [], set = new Set(); $('wrap').querySelectorAll('td.day[data-e]').forEach(td => { if(!set.has(td.dataset.e)){ set.add(td.dataset.e); seen.push(td.dataset.e); } }); return seen; };
+function dragRect(){
+  const ids = rowIds(), ra = ids.indexOf(drag.ea), rb = ids.indexOf(drag.eb);
+  return {ids: ids.slice(Math.min(ra, rb), Math.max(ra, rb) + 1), lo: Math.min(drag.a, drag.b), hi: Math.max(drag.a, drag.b)};
+}
 function paintSel(){
   $('wrap').querySelectorAll('td.sel').forEach(td => td.classList.remove('sel'));
   if(!drag) return;
-  const lo = Math.min(drag.a, drag.b), hi = Math.max(drag.a, drag.b);
-  $('wrap').querySelectorAll(`td.day[data-e="${CSS.escape(drag.e)}"]`).forEach(td => {
-    const i = +td.dataset.i; if(i >= lo && i <= hi && !td.hasAttribute('data-lck')) td.classList.add('sel');
+  const {ids, lo, hi} = dragRect(), set = new Set(ids);
+  $('wrap').querySelectorAll('td.day[data-e]').forEach(td => {
+    const i = +td.dataset.i; if(set.has(td.dataset.e) && i >= lo && i <= hi && !td.hasAttribute('data-lck')) td.classList.add('sel');
   });
 }
 function closeEd(){ edpop.hidden = true; drag = null; paintSel(); }
 $('wrap').addEventListener('mousedown', ev => {
   if(!S.edit || ev.button !== 0) return;
   const td = ev.target.closest('td.day[data-e]'); if(!td || td.hasAttribute('data-lck')) return;
-  ev.preventDefault(); closePop(); edpop.hidden = true;
-  drag = {e: td.dataset.e, a: +td.dataset.i, b: +td.dataset.i, td, dragging: true}; paintSel();
+  ev.preventDefault(); closePop(); edpop.hidden = true; S.editNote = '';
+  drag = {ea: td.dataset.e, eb: td.dataset.e, a: +td.dataset.i, b: +td.dataset.i, td, dragging: true}; paintSel();
 });
 $('wrap').addEventListener('mouseover', ev => {
   if(!drag || !drag.dragging) return;
   const td = ev.target.closest('td.day[data-e]');
-  if(td && td.dataset.e === drag.e){ drag.b = +td.dataset.i; drag.td = td; paintSel(); }
+  if(td){ drag.eb = td.dataset.e; drag.b = +td.dataset.i; drag.td = td; paintSel(); }
 });
 document.addEventListener('mouseup', () => { if(drag && drag.dragging){ drag.dragging = false; openEditor(); } });
 document.addEventListener('mousedown', ev => { if(!edpop.hidden && !edpop.contains(ev.target) && !ev.target.closest('td.day[data-e]')) closeEd(); });
-document.addEventListener('keydown', ev => { if(ev.key === 'Escape') closeEd(); });
+document.addEventListener('keydown', ev => {
+  if(ev.key === 'Escape'){ closeEd(); return; }
+  if(!S.edit || !drag || !(ev.ctrlKey || ev.metaKey)) return;
+  const k = ev.key.toLowerCase();
+  if(k !== 'c' && k !== 'v') return;
+  const inp = ev.target && ev.target.id === 'edCode' ? ev.target : null;
+  // typing in the code box keeps the normal text copy/paste; with an empty box the shortcut acts on the cells
+  if(inp && (inp.value || (k === 'c' && inp.selectionStart !== inp.selectionEnd))) return;
+  if(inp === null && ev.target && /^(input|textarea|select)$/i.test(ev.target.tagName)) return;
+  if(k === 'v' && !S.clip) return;
+  ev.preventDefault(); if(k === 'c') copySel(); else pasteSel();
+});
 
+const effText = (e, i) => { const sg = S.staged[e.id + '|' + S.data.dates[i]]; return sg ? sg.text : String(e.cells[i] || '').trim(); };
+const empById = id => S.data.employees.find(x => x.id === id);
+const squadOf = e => (S.data.sources || []).findIndex(x => x.name === e.info[0]);
 function selection(){
-  const e = S.data.employees.find(x => x.id === drag.e);
-  const lo = Math.min(drag.a, drag.b), hi = Math.max(drag.a, drag.b), idx = [];
+  const {ids, lo, hi} = dragRect(), emps = ids.map(empById).filter(Boolean), cells = [];
   let locked = 0;
-  for(let i = lo; i <= hi; i++){ if(lockReason(e, i)) locked++; else idx.push(i); }
-  return {e, lo, hi, idx, locked};
+  for(const e of emps) for(let i = lo; i <= hi; i++){ if(lockReason(e, i)) locked++; else cells.push({e, i}); }
+  return {emps, lo, hi, cells, locked};
 }
 function openEditor(){
-  const {e, lo, hi, idx, locked} = selection();
-  if(!idx.length){ closeEd(); return; }
+  const {emps, lo, hi, cells, locked} = selection();
+  if(!cells.length){ closeEd(); return; }
   const dt = i => { const [, m, d] = S.data.dates[i].split('-'); return +d + '/' + +m; };
-  const range = lo === hi ? dt(lo) : `${dt(lo)} – ${dt(hi)}`;
-  edpop.innerHTML = `<h4>${esc(e.name)} <small>${esc(e.id)}</small></h4><div class="sub">${esc(e.info[0] || '')} · ${range} (${idx.length} day${idx.length > 1 ? 's' : ''})</div>` +
-    (locked ? `<div class="sub warn">${locked} locked day(s) in this range are skipped.</div>` : '') +
+  const range = lo === hi ? dt(lo) : `${dt(lo)} – ${dt(hi)}`, nd = hi - lo + 1;
+  const who = emps.length === 1 ? `${esc(emps[0].name)} <small>${esc(emps[0].id)}</small>` : `${emps.length} people`;
+  edpop.innerHTML = `<h4>${who}</h4><div class="sub">${emps.length === 1 ? esc(emps[0].info[0] || '') + ' · ' : ''}${range} (${nd} day${nd > 1 ? 's' : ''}${emps.length > 1 ? `, ${cells.length} cells` : ''})</div>` +
+    (locked ? `<div class="sub warn">${locked} locked cell(s) in this selection are skipped.</div>` : '') +
     '<input class="code" id="edCode" list="codes" maxlength="40" placeholder="Aircraft code, e.g. A864-FM" autocomplete="off">' +
     '<div class="sub warn" id="edErr"></div>' +
     '<div class="row"><button class="btn sm primary" data-ed="code">Set code</button><button class="btn sm" data-ed="n">Normal N</button>' +
-    '<button class="btn sm" data-ed="clear">Clear</button><button class="btn sm" data-ed="cancel">Cancel</button></div>';
+    '<button class="btn sm" data-ed="clear">Clear</button><button class="btn sm" data-ed="cancel">Cancel</button></div>' +
+    `<div class="row"><button class="btn sm" data-ed="copy" title="Ctrl+C with the code box empty">Copy</button><button class="btn sm" data-ed="paste" ${S.clip ? '' : 'disabled'} title="Ctrl+V with the code box empty; pastes from the top-left of the selection, repeated if the selection is bigger">Paste</button></div>`;
   edpop.hidden = false;
   const r = drag.td.getBoundingClientRect(), pw = edpop.offsetWidth, ph = edpop.offsetHeight;
   edpop.style.left = Math.max(8, Math.min(r.left, innerWidth - pw - 8)) + 'px';
   edpop.style.top = (r.bottom + 6 + ph > innerHeight ? Math.max(8, r.top - ph - 6) : r.bottom + 6) + 'px';
   $('edCode').focus();
 }
-edpop.addEventListener('click', ev => { const b = ev.target.closest('[data-ed]'); if(b) applyEdit(b.dataset.ed); });
+edpop.addEventListener('click', ev => { const b = ev.target.closest('[data-ed]'); if(b && !b.disabled) applyEdit(b.dataset.ed); });
 edpop.addEventListener('keydown', ev => { if(ev.key === 'Enter' && ev.target.id === 'edCode'){ ev.preventDefault(); applyEdit('code'); } });
+
+// put one cell's new text into the staged edits (same shape the server expects)
+function stageCell(e, sq, i, text){
+  const date = S.data.dates[i], key = e.id + '|' + date, old = String(e.cells[i] || '').trim();
+  const kind = text === 'N' ? 'n' : text === '' ? 'clear' : 'code';
+  if(text === old) delete S.staged[key];   // back to what the sheet already has
+  else S.staged[key] = {squad: sq, id: e.id, name: e.name, date, old, kind, value: kind === 'code' ? text : '', text, state: 'ok'};
+}
+const pasteable = t => t === '' || t.toUpperCase() === 'N' || (t.length <= 40 && !/^H /i.test(t));
 function applyEdit(kind){
   if(kind === 'cancel'){ closeEd(); return; }
+  if(kind === 'copy'){ copySel(); return; }
+  if(kind === 'paste'){ pasteSel(); return; }
   let value = '';
   if(kind === 'code'){
     value = $('edCode').value.replace(/\s+/g, ' ').trim();
@@ -860,15 +894,37 @@ function applyEdit(kind){
               : /^H /i.test(value) ? 'Course markers (H …) come from KHDT only.' : '';
     if(err){ $('edErr').textContent = err; return; }
   }
-  const {e, idx} = selection();
-  const sq = (S.data.sources || []).findIndex(x => x.name === e.info[0]);
-  if(sq < 0){ $('edErr').textContent = 'Can’t tell which squad this person belongs to.'; return; }
-  for(const i of idx){
-    const date = S.data.dates[i], key = e.id + '|' + date, old = String(e.cells[i] || '').trim();
-    const text = kind === 'n' ? 'N' : kind === 'clear' ? '' : value;
-    if(text === old) delete S.staged[key];   // back to what the sheet already has
-    else S.staged[key] = {squad: sq, id: e.id, name: e.name, date, old, kind, value, text, state: 'ok'};
+  const {cells} = selection();
+  for(const {e} of cells) if(squadOf(e) < 0){ $('edErr').textContent = `Can’t tell which squad ${e.name} belongs to.`; return; }
+  const text = kind === 'n' ? 'N' : kind === 'clear' ? '' : value;
+  for(const {e, i} of cells) stageCell(e, squadOf(e), i, text);
+  closeEd(); render();
+}
+function copySel(){
+  const {emps, lo, hi} = selection();
+  S.clip = {h: emps.length, w: hi - lo + 1, cells: emps.map(e => { const row = []; for(let i = lo; i <= hi; i++) row.push(lockReason(e, i) ? null : effText(e, i)); return row; })};
+  try{ navigator.clipboard && navigator.clipboard.writeText(S.clip.cells.map(r => r.map(t => t == null ? '' : t).join('\t')).join('\n')); }catch(_){}
+  S.editNote = `Copied ${emps.length} person(s) × ${hi - lo + 1} day(s). Select the target (top-left cell) and Paste.`;
+  closeEd(); renderEditBar();
+}
+function pasteSel(){
+  if(!S.clip){ return; }
+  const ids = rowIds(), {ids: sel, lo, hi} = dragRect();
+  const r0 = ids.indexOf(sel[0]), tall = sel.length > S.clip.h, wide = hi - lo + 1 > S.clip.w;
+  const rows = tall ? sel.length : S.clip.h, cols = wide ? hi - lo + 1 : S.clip.w;   // a bigger selection repeats the copied block
+  let done = 0, locked = 0, bad = 0, cut = 0;
+  for(let y = 0; y < rows; y++){
+    const e = empById(ids[r0 + y]); if(!e){ cut++; continue; }
+    const sq = squadOf(e); if(sq < 0){ bad++; continue; }
+    for(let x = 0; x < cols; x++){
+      const i = lo + x; if(i >= S.data.dates.length){ cut++; continue; }
+      const t = S.clip.cells[y % S.clip.h][x % S.clip.w];
+      if(t == null || !pasteable(t)){ bad++; continue; }
+      if(lockReason(e, i)){ locked++; continue; }
+      stageCell(e, sq, i, t.toUpperCase() === 'N' ? 'N' : t); done++;
+    }
   }
+  S.editNote = `Pasted ${done} cell(s)` + (locked ? `, ${locked} locked skipped` : '') + (bad ? `, ${bad} not pasteable (locked source or unknown squad)` : '') + (cut ? `, ${cut} fell outside the table` : '') + '.';
   closeEd(); render();
 }
 
