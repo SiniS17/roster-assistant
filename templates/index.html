@@ -751,10 +751,15 @@ function updateEditBtn(){
   $('editBtn').textContent = S.edit ? 'Editing' : 'Edit mode';
 }
 // Why a cell can't be edited by hand ('' = it can). Same rules as the server's locks, plus pending KHDT changes.
-function lockReason(e, i){
+// bulk = the action covers more than one cell (a drag over several cells, or a paste that fills several): a red N
+// (forced day off) is then untouchable. Clicking ONE cell on its own is a deliberate touch, so it can still be changed.
+function lockReason(e, i, bulk){
   const v = String(e.cells[i] || '').trim();
   if(/^H /i.test(v)) return 'a KHDT course marker';
-  if(!RED_N_EDITABLE && v.toUpperCase() === 'N' && isRed(e.colors[i])) return 'a guaranteed day off (red N)';
+  if(v.toUpperCase() === 'N' && isRed(e.colors[i])){
+    if(!RED_N_EDITABLE) return 'a guaranteed day off (red N)';
+    if(bulk) return 'a forced day off (red N): click that cell on its own to change it';
+  }
   const c = REV && REV.changes[e.id + '|' + S.data.dates[i]];
   if(c && c.state === 'ok' && c.status !== 'rejected') return 'a KHDT change is waiting here - keep or reject it first';
   return '';
@@ -782,7 +787,7 @@ function renderEditBar(){
   $('codes').innerHTML = [...codes].sort().map(c => `<option value="${esc(c)}">`).join('');
   bar.innerHTML = `<span><b>${S.edit ? 'Edit mode' : 'Staged edits'}</b>: <b>${ok}</b> change(s) staged, not saved yet</span>` +
     (bad ? `<span title="The cell was edited in the sheet after you staged it, so the edit is ignored.">${bad} out of date</span>` : '') +
-    (S.edit ? '<small>Click a cell, or drag over several people and days, then set a code, or Copy and Paste onto others. Type N for a normal day off; “Forced day off” writes a red N. H course markers are locked.</small>' : '') +
+    (S.edit ? '<small>Click a cell, or drag over several people and days, then set a code, or Copy and Paste onto others. Type N for a normal day off; “Forced day off” writes a red N. H markers are locked; dragging over several cells skips red N (click one on its own to change it).</small>' : '') +
     (S.editNote ? `<span>${esc(S.editNote)}</span>` : '') +
     '<span class="grow"></span>' +
     `<button class="btn sm primary" data-ed2="save" ${ok && window.AUTH && AUTH.user ? '' : 'disabled'}>Save ${ok} to sheets</button>` +
@@ -815,9 +820,10 @@ function dragRect(){
 function paintSel(){
   $('wrap').querySelectorAll('td.sel').forEach(td => td.classList.remove('sel'));
   if(!drag) return;
-  const {ids, lo, hi} = dragRect(), set = new Set(ids);
+  const {ids, lo, hi} = dragRect(), set = new Set(ids), bulk = ids.length * (hi - lo + 1) > 1;
   $('wrap').querySelectorAll('td.day[data-e]').forEach(td => {
-    const i = +td.dataset.i; if(set.has(td.dataset.e) && i >= lo && i <= hi && !td.hasAttribute('data-lck')) td.classList.add('sel');
+    const i = +td.dataset.i, e = bulk && empById(td.dataset.e);
+    if(set.has(td.dataset.e) && i >= lo && i <= hi && !td.hasAttribute('data-lck') && !(e && lockReason(e, i, true))) td.classList.add('sel');
   });
 }
 function closeEd(){ edpop.hidden = true; drag = null; paintSel(); }
@@ -853,18 +859,22 @@ const empById = id => S.data.employees.find(x => x.id === id);
 const squadOf = e => (S.data.sources || []).findIndex(x => x.name === e.info[0]);
 function selection(){
   const {ids, lo, hi} = dragRect(), emps = ids.map(empById).filter(Boolean), cells = [];
-  let locked = 0;
-  for(const e of emps) for(let i = lo; i <= hi; i++){ if(lockReason(e, i)) locked++; else cells.push({e, i}); }
-  return {emps, lo, hi, cells, locked};
+  let locked = 0, reds = 0;
+  const bulk = emps.length * (hi - lo + 1) > 1;   // a drag over several cells: forced days off (red N) are skipped
+  for(const e of emps) for(let i = lo; i <= hi; i++){
+    const why = lockReason(e, i, bulk);
+    if(why){ locked++; if(bulk && !lockReason(e, i)) reds++; } else cells.push({e, i});
+  }
+  return {emps, lo, hi, cells, locked, reds};
 }
 function openEditor(){
-  const {emps, lo, hi, cells, locked} = selection();
+  const {emps, lo, hi, cells, locked, reds} = selection();
   if(!cells.length){ closeEd(); return; }
   const dt = i => { const [, m, d] = S.data.dates[i].split('-'); return +d + '/' + +m; };
   const range = lo === hi ? dt(lo) : `${dt(lo)} – ${dt(hi)}`, nd = hi - lo + 1;
   const who = emps.length === 1 ? `${esc(emps[0].name)} <small>${esc(emps[0].id)}</small>` : `${emps.length} people`;
   edpop.innerHTML = `<h4>${who}</h4><div class="sub">${emps.length === 1 ? esc(emps[0].info[0] || '') + ' · ' : ''}${range} (${nd} day${nd > 1 ? 's' : ''}${emps.length > 1 ? `, ${cells.length} cells` : ''})</div>` +
-    (locked ? `<div class="sub warn">${locked} locked cell(s) in this selection are skipped.</div>` : '') +
+    (locked ? `<div class="sub warn">${locked} locked cell(s) in this selection are skipped${reds ? ` (${reds} forced day(s) off: click one on its own to change it)` : ''}.</div>` : '') +
     '<input class="code" id="edCode" list="codes" maxlength="40" placeholder="Aircraft code, or N for a day off" autocomplete="off">' +
     '<div class="sub warn" id="edErr"></div>' +
     '<div class="row"><button class="btn sm primary" data-ed="code">Set code</button><button class="btn sm" data-ed="forced" title="Writes a red N: a day off the person was guaranteed">Forced day off</button>' +
@@ -921,6 +931,7 @@ function pasteSel(){
   const r0 = ids.indexOf(sel[0]), tall = sel.length > S.clip.h, wide = hi - lo + 1 > S.clip.w;
   const rows = tall ? sel.length : S.clip.h, cols = wide ? hi - lo + 1 : S.clip.w;   // a bigger selection repeats the copied block
   let done = 0, locked = 0, bad = 0, cut = 0;
+  const bulk = rows * cols > 1;   // pasting several cells never overwrites a forced day off (red N)
   for(let y = 0; y < rows; y++){
     const e = empById(ids[r0 + y]); if(!e){ cut++; continue; }
     const sq = squadOf(e); if(sq < 0){ bad++; continue; }
@@ -928,7 +939,7 @@ function pasteSel(){
       const i = lo + x; if(i >= S.data.dates.length){ cut++; continue; }
       const t = S.clip.cells[y % S.clip.h][x % S.clip.w];
       if(t == null || !pasteable(t)){ bad++; continue; }
-      if(lockReason(e, i)){ locked++; continue; }
+      if(lockReason(e, i, bulk)){ locked++; continue; }
       const isN = t.toUpperCase() === 'N';
       stageCell(e, sq, i, isN ? 'N' : t, isN && !!S.clip.red[y % S.clip.h][x % S.clip.w]); done++;
     }
