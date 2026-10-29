@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Roster Assistant</title>
 <script>try{document.documentElement.dataset.theme=localStorage.getItem('theme')==='dark'?'dark':'light'}catch(e){document.documentElement.dataset.theme='light'}</script>
 <style>
@@ -247,7 +247,83 @@ table.dt{width:100%;min-width:600px;table-layout:fixed;font-size:12.5px}
 @media (max-width:980px){.dist-cols{grid-template-columns:minmax(0,1fr)}}
 @media (max-width:640px){.crew{grid-template-columns:repeat(2,minmax(0,1fr))}.crew>div:nth-child(3){border-left:0}.crew>div:nth-child(n+3){border-top:1px solid var(--line)}.dist-date{font-size:26px}.dist{padding:16px 12px 36px}}
 :root[data-theme="dark"] .i-moon,:root:not([data-theme="dark"]) .i-sun{display:none}
-@media (max-width:760px){.search{width:120px}.legend{display:none}.month{display:none}.brand small{display:none}}
+.nav .mob-only,.pop .row.ed-ext{display:none}
+.msub{display:none}
+.dt a.tel{color:inherit;text-decoration:none}
+.crew span a.tel{color:inherit;text-decoration:none}
+.tabs:empty{display:none}
+
+/* ---- phone layout (feature/mobile) ----
+   Top bar: 2 rows (menu / title / reload / theme, then filters). Edit and log-in move into the side menu.
+   Review + edit bars sit under the table (thumb reach). Cell editor and KHDT popover become a bottom sheet.
+   Name column shrinks, the training/avatars go, the distribution tables drop ORD / ID / POS (shown under the name). */
+@media (max-width:760px){
+  html,body{height:100dvh}
+  body{-webkit-text-size-adjust:100%;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+  :root{--nw:122px;--cw:calc(60px*var(--z));--rh:calc(44px*var(--z))}
+
+  .top{flex-wrap:wrap;gap:8px;padding:8px 10px;padding-top:max(8px,env(safe-area-inset-top))}
+  .brand{font-size:14px}.brand small,.month,.zoom,.legend{display:none}
+  .icon-btn{width:40px;height:40px}
+  #editBtn,#loginBtn{display:none!important}
+  .tabs{order:10;flex:1 1 100%;margin-left:0;padding-bottom:2px}
+  .tab{padding:9px 14px}
+  #team{order:11;flex:1 1 42%;min-width:0;max-width:none}
+  #q{order:12;flex:1 1 50%;width:auto;min-width:0}
+  .search,select.search,.dlg input[type=file],.dlg input[type=text],#loginDlg input,.pop input.code{font-size:16px}
+  .search{padding:9px 12px}
+  .btn.sm{padding:8px 12px;font-size:13px;min-height:36px}
+
+  .stats{flex-wrap:nowrap;overflow-x:auto;white-space:nowrap;gap:4px 16px;padding:7px 12px;scrollbar-width:none}
+  .stats>span{flex:none}
+  .stats:empty{display:none}
+  .note{padding:6px 12px;font-size:12px}
+
+  .review,.edbar{order:2;border-bottom:0;border-top:1px solid var(--line);padding:8px 10px calc(8px + env(safe-area-inset-bottom));gap:6px 10px;font-size:12px;max-height:40vh;overflow:auto}
+  .edbar small{display:none}
+  .review .grow,.edbar .grow{flex:1 1 100%;height:0}
+  .review label{flex:none}
+
+  .name{padding:0 8px}
+  .who{gap:6px}.idx,.av{display:none}
+  .who b{max-width:106px;font-size:12px}
+  .who small{max-width:106px;font-size:10px}
+  .who small .xi{display:none}
+  thead th{height:calc(42px*var(--z))}
+  .chip{padding:0 2px;font-size:11px}
+
+  .pop{left:8px!important;right:8px;top:auto!important;bottom:calc(8px + env(safe-area-inset-bottom));width:auto;max-width:none;max-height:72dvh;overflow:auto;padding:14px 16px;border-radius:14px;z-index:30}
+  .pop .row{flex-wrap:wrap}
+  .pop .row .btn{flex:1 1 auto}
+  .pop input.code{padding:11px 12px}
+  .pop .row.ed-ext{display:flex}
+  .nav .mob-only{display:flex}
+  .nav .mob-only[hidden],hr.mob-only[hidden]{display:none}
+  .drawer{width:min(290px,86vw);padding-bottom:env(safe-area-inset-bottom)}
+  .nav a,.nav button{padding:14px 12px}
+
+  dialog{width:calc(100vw - 16px);max-width:none;max-height:92dvh;border-radius:12px}
+  .dlg{padding:16px}
+  .dlg .row{flex-wrap:wrap}
+  .dlg .row .btn{flex:1 1 auto}
+  .revlist{max-height:60dvh}
+  .rl td.acts{white-space:normal}
+  .rl td.acts .btn{margin:2px 0 2px 4px}
+
+  .daystrip{gap:8px}
+  .dbtn{min-width:64px;padding:8px 10px}
+  .dist{padding:12px 10px 32px}
+  .dist-head{gap:12px;margin-bottom:16px}
+  .dist-date{font-size:24px}
+  .crew{width:100%}
+  .dist-cols,.dist-col{gap:12px}
+  table.dt{min-width:0}
+  .dt .c-ord,.dt .c-id,.dt .c-pos{display:none}
+  .dt th.nm,.dt td.nm{padding-left:12px}
+  .msub{display:block;margin-top:2px;color:var(--muted);font:11px Consolas,monospace;font-weight:500}
+  .dt a.tel{color:var(--blue)}
+  .dt td.ph{font-size:12px}
+}
 </style>
 </head>
 <body>
@@ -289,6 +365,9 @@ table.dt{width:100%;min-width:600px;table-layout:fixed;font-size:12.5px}
     <button class="on" id="navRoster">Roster</button>
     <button id="navDist">Daily Distribution</button>
     <button id="navKhdt">KHDT → Roster</button>
+    <hr class="mob-only">
+    <button class="mob-only" id="navEdit" hidden>Edit mode</button>
+    <button class="mob-only" id="navLogin">Log in</button>
     <hr>
     <a id="navSheet" href="#" target="_blank" rel="noopener">Open Google Sheet</a>
     <a href="https://github.com/SiniS17/roster-assistant/blob/main/HOW_IT_WORKS.md" target="_blank" rel="noopener">How it works</a>
@@ -365,7 +444,17 @@ $('themeBtn').onclick = () => {
 syncThemeBtn();
 
 /* ---------- side menu ---------- */
+// Phone layout: Edit mode and Log in/out live in this menu (the real buttons are hidden in the top bar).
+function syncMobileNav(){
+  const e = $('editBtn'), l = $('loginBtn');
+  $('navEdit').hidden = !e || e.hidden || S.view !== 'roster';
+  $('navEdit').textContent = S.edit ? 'Exit edit mode' : 'Edit mode';
+  $('navLogin').textContent = l ? l.textContent : 'Log in';
+}
+$('navEdit').onclick = () => { menu(false); $('editBtn').click(); };
+$('navLogin').onclick = () => { menu(false); const l = $('loginBtn'); if(l) l.click(); };
 function menu(open){
+  if(open) syncMobileNav();
   $('drawer').classList.toggle('on', open); $('scrim').classList.toggle('on', open);
   $('menuBtn').setAttribute('aria-expanded', open);
 }
@@ -688,7 +777,7 @@ function render(){
     const initial = (e.name.trim()[0] || '?').toUpperCase();
     const sub = e.info.filter(Boolean);
     h += `<tr><td class="name"><div class="who"><span class="idx">${n+1}</span><span class="av">${esc(initial)}</span>` +
-         `<span><b title="${esc(e.name)}">${esc(e.name)}</b><small><i>${esc(e.id)}</i>${sub.length ? ' · ' + esc(sub.join(' · ')) : ''}</small></span></div></td>`;
+         `<span><b title="${esc(e.name)}">${esc(e.name)}</b><small><i>${esc(e.id)}</i>${sub.length ? '<span class="xi"> · ' + esc(sub.join(' · ')) + '</span>' : ''}</small></span></div></td>`;
     const E = e.cells.map((_, i) => eff(e, i)), N = E.length;
     for(let i = 0; i < N; ){
       const x = E[i], v = x.v, k = kindOf(v, x.color), dt = dates[i];
@@ -829,11 +918,16 @@ function paintSel(){
     if(set.has(td.dataset.e) && i >= lo && i <= hi && !td.hasAttribute('data-lck') && !(e && lockReason(e, i, true))) td.classList.add('sel');
   });
 }
-function closeEd(){ edpop.hidden = true; drag = null; paintSel(); }
+function closeEd(){ edpop.hidden = true; drag = null; S.extending = false; paintSel(); }
 $('wrap').addEventListener('mousedown', ev => {
   if(!S.edit || ev.button !== 0) return;
   const td = ev.target.closest('td.day[data-e]'); if(!td || td.hasAttribute('data-lck')) return;
-  ev.preventDefault(); closePop(); edpop.hidden = true; S.editNote = '';
+  ev.preventDefault(); closePop(); edpop.hidden = true;
+  if(S.extending && drag){
+    S.extending = false; S.editNote = ''; renderEditBar();
+    drag.eb = td.dataset.e; drag.b = +td.dataset.i; drag.td = td; paintSel(); openEditor(); return;
+  }
+  S.editNote = '';
   drag = {ea: td.dataset.e, eb: td.dataset.e, a: +td.dataset.i, b: +td.dataset.i, td, dragging: true}; paintSel();
 });
 $('wrap').addEventListener('mouseover', ev => {
@@ -882,6 +976,7 @@ function openEditor(){
     '<div class="sub warn" id="edErr"></div>' +
     '<div class="row"><button class="btn sm primary" data-ed="code">Set code</button><button class="btn sm" data-ed="forced" title="Writes a red N: a day off the person was guaranteed">Forced day off</button>' +
     '<button class="btn sm" data-ed="clear">Clear</button><button class="btn sm" data-ed="cancel">Cancel</button></div>' +
+    '<div class="row ed-ext"><button class="btn sm" data-ed="extend" title="Pick the last cell of a block: tap this, then tap the cell">Select more cells…</button></div>' +
     `<div class="row"><button class="btn sm" data-ed="copy" title="Ctrl+C with the code box empty">Copy</button><button class="btn sm" data-ed="paste" ${S.clip ? '' : 'disabled'} title="Ctrl+V with the code box empty; pastes from the top-left of the selection, repeated if the selection is bigger">Paste</button></div>`;
   edpop.hidden = false;
   const r = drag.td.getBoundingClientRect(), pw = edpop.offsetWidth, ph = edpop.offsetHeight;
@@ -903,6 +998,9 @@ function stageCell(e, sq, i, text, forced){
 const pasteable = t => t === '' || t.toUpperCase() === 'N' || (t.length <= 40 && !/^H /i.test(t));
 function applyEdit(kind){
   if(kind === 'cancel'){ closeEd(); return; }
+  if(kind === 'extend'){   // touch screens can't drag: the next tap on a cell sets the other corner of the block
+    S.extending = true; edpop.hidden = true; S.editNote = 'Tap the last cell of the block (any person, any day).'; renderEditBar(); return;
+  }
   if(kind === 'copy'){ copySel(); return; }
   if(kind === 'paste'){ pasteSel(); return; }
   let value = '';
@@ -1128,11 +1226,12 @@ function remarkHtml(p){
   if(/leader/i.test(t)) return `<span class="rchip ${/gsgt/i.test(t) ? 'lead' : ''}">${esc(t)}</span>`;
   return `<span class="rtxt ${p.red ? 'red' : ''}">${esc(t)}</span>`;
 }
+const telLink = ph => ph ? `<a class="tel" href="tel:${esc(String(ph).replace(/[^\d+]/g, ''))}">${esc(ph)}</a>` : '';
 function peopleTable(people){
-  return '<div class="tscroll"><table class="dt"><colgroup><col style="width:52px"><col><col style="width:84px"><col style="width:126px"><col style="width:98px"><col></colgroup><tr><th class="o">ORD</th><th>NAME AND SURNAME</th><th>ID</th><th>POS</th><th>PHONE</th><th>REMARK</th></tr>' +
-    people.map(p => `<tr><td class="o">${p.ord}</td><td class="nm">${esc(p.name)}</td><td class="id">${esc(p.id)}</td>` +
-      `<td>${p.pos ? `<span class="pos" title="${esc(p.pos)}">${esc(p.pos)}</span>` : '<span class="dim">–</span>'}</td>` +
-      `<td class="ph">${esc(p.phone) || '<span class="dim">–</span>'}</td><td class="rm">${remarkHtml(p)}</td></tr>`).join('') + '</table></div>';
+  return '<div class="tscroll"><table class="dt"><colgroup><col class="c-ord" style="width:52px"><col class="c-nm"><col class="c-id" style="width:84px"><col class="c-pos" style="width:126px"><col style="width:98px"><col></colgroup><tr><th class="o c-ord">ORD</th><th class="nm">NAME AND SURNAME</th><th class="c-id">ID</th><th class="c-pos">POS</th><th>PHONE</th><th>REMARK</th></tr>' +
+    people.map(p => `<tr><td class="o c-ord">${p.ord}</td><td class="nm">${esc(p.name)}<small class="msub">${esc([p.id, p.pos].filter(Boolean).join(' · '))}</small></td><td class="id c-id">${esc(p.id)}</td>` +
+      `<td class="c-pos">${p.pos ? `<span class="pos" title="${esc(p.pos)}">${esc(p.pos)}</span>` : '<span class="dim">–</span>'}</td>` +
+      `<td class="ph">${telLink(p.phone) || '<span class="dim">–</span>'}</td><td class="rm">${remarkHtml(p)}</td></tr>`).join('') + '</table></div>';
 }
 
 function paintDay(sh, day){
@@ -1168,7 +1267,7 @@ function paintDay(sh, day){
     const people = fromRoster.length ? fromRoster : (p ? [p] : []);
     const rows = people.length ? people.map(x => {
       const note = x.note && mk && fold(x.note) !== fold(mk) ? ` <em>${esc(x.note)}</em>` : '';
-      return `<b title="${esc(x.name + (x.note ? ' (' + x.note + ')' : ''))}">${esc(x.name)}${note}</b><span>${x.phone ? esc(x.phone) : '–'}</span>`;
+      return `<b title="${esc(x.name + (x.note ? ' (' + x.note + ')' : ''))}">${esc(x.name)}${note}</b><span>${x.phone ? telLink(x.phone) : '–'}</span>`;
     }).join('') : '<b>–</b><span>–</span>';
     return `<div><small>${label}${mk ? ` · ${esc(mk)}` : ''}</small>${rows}</div>`;
   }).join('');
