@@ -132,7 +132,15 @@ LOG_EVENT_LABELS = {
 
 # bot email:khdt-roster-bot@khdt-roster.iam.gserviceaccount.com
 
-# Roster editor: may a user overwrite or clear a red N (a "forced day off")? The editor can now WRITE one
-# (button "Forced day off"), so by default it can also be changed back by hand. KHDT course markers ('H ...')
-# stay locked either way. False = red N is locked again (the old Phase 2 behaviour).
-ROSTER_RED_N_EDITABLE = True
+# Roster editor: what is UNTOUCHABLE while editing. One place for the page (it gets this dict) and the server
+# (roster_edit.lock_reason). A cell matching any rule cannot be overwritten, cleared or pasted over by hand.
+ROSTER_LOCKED = {
+    # KHDT course markers ('H ATHK' ...): KHDT owns them. True = locked.
+    "course_marker": True,
+    # Red N (forced day off): "bulk" = locked when the action covers several cells (a drag over more than one
+    # cell, or a paste that fills several) but a single click on one cell can still change it;
+    # "always" = never editable by hand; "never" = always editable.
+    "red_n": "bulk",
+    # A cell whose text STARTS with one of these (case-insensitive) is locked, e.g. "LINE", "LINE 2", "line-A864".
+    "prefixes": ["LINE"],
+}

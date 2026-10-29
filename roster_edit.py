@@ -17,7 +17,8 @@ An edit is {squad, id, name, date (YYYY-MM-DD), old, kind, value}:
 An edit is skipped (and reported, never forced) when
   - the employee is no longer on that squad's own rows, or the date column is not on the sheet,
   - the cell text is no longer what the page saw (somebody else changed it),
-  - the cell is LOCKED: a KHDT course marker ('H ...'), or a red N when config.ROSTER_RED_N_EDITABLE is off,
+  - the cell is LOCKED (config.ROSTER_LOCKED, see lock_reason): a KHDT course marker ('H ...'), text starting with
+    one of the locked prefixes (e.g. 'LINE'), or a red N when red_n is "always",
   - the new value is not allowed (empty code, a course marker, too long),
   - it would change nothing (text AND colour: black N -> red N is a change).
 The editor can write a red N (kind 'forced') but never an 'H ...' marker.
@@ -32,7 +33,7 @@ from googleapiclient.errors import HttpError
 
 import auth
 import distribution as dist
-from config import ROSTER_RED_N_EDITABLE
+from config import ROSTER_LOCKED
 from engine import MARKER_FONT_COLOR, is_course_marker, is_red_n, normalize_id
 from khdt_review import _drop_caches, _load_squad, _tab_gid
 from roster_view import _text
@@ -45,6 +46,23 @@ MAX_CODE_LEN = 40
 KINDS = ("code", "n", "forced", "clear")
 BLACK = "000000"
 RED = MARKER_FONT_COLOR  # "FF0000"
+
+
+def lock_reason(text, color=None, bulk=False):
+    """Why a cell may not be changed by hand ('' = it may). Rules: config.ROSTER_LOCKED. bulk = the action covers
+    several cells (the server cannot know; the daily-move planner passes True because nobody touched that cell)."""
+    t = str(text or "").strip()
+    cfg = ROSTER_LOCKED
+    if cfg.get("course_marker", True) and is_course_marker(t):
+        return "locked: a KHDT course marker"
+    for pre in cfg.get("prefixes") or []:
+        if pre and pre.strip() and t.upper().startswith(pre.strip().upper()):
+            return f"locked: starts with '{pre.strip()}'"
+    if is_red_n(t, color):
+        mode = cfg.get("red_n", "bulk")
+        if mode == "always" or (mode == "bulk" and bulk):
+            return "locked: guaranteed day off (red N)"
+    return ""
 
 
 def new_value(edit):
@@ -95,11 +113,10 @@ def check(sq, col_of_date, edit):
     color = crow[col] if col < len(crow) else None
     if live != str(edit.get("old") if edit.get("old") is not None else "").strip():
         return None, f"the cell changed since you opened it (now '{live}')"
-    if is_course_marker(live):
-        return None, "locked: a KHDT course marker"
+    why = lock_reason(live, color)
+    if why:
+        return None, why
     live_red = is_red_n(live, color)
-    if live_red and not ROSTER_RED_N_EDITABLE:
-        return None, "locked: guaranteed day off (red N)"
     old_red = edit.get("old_red")
     if live == "N" and old_red is not None and bool(old_red) != live_red:
         return None, f"the cell changed since you opened it (the N is now {'red' if live_red else 'black'})"

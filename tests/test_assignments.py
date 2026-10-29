@@ -110,12 +110,13 @@ def squad1(phones=None):
 
 @contextlib.contextmanager
 def red_n_locked():
-    """config.ROSTER_RED_N_EDITABLE off: a red N is locked against roster edits again."""
-    roster_edit.ROSTER_RED_N_EDITABLE = False
+    """config.ROSTER_LOCKED['red_n'] = "always": a red N is locked against roster edits again."""
+    old = roster_edit.ROSTER_LOCKED
+    roster_edit.ROSTER_LOCKED = {**old, "red_n": "always"}
     try:
         yield
     finally:
-        roster_edit.ROSTER_RED_N_EDITABLE = True
+        roster_edit.ROSTER_LOCKED = old
 
 
 def intent(origin="roster", **kw):
@@ -241,6 +242,16 @@ def test_locked_cells_block_everything():
     assert p["status"] == "blocked" and "course marker" in p["blocked"]
     p = a.plan_link(ctx, intent("daily", id="VAE02379", date="2026-10-03", tab="3", to="A864-34"))
     assert p["status"] == "blocked" and "red N" in p["blocked"]
+
+
+def test_line_cells_are_locked_for_roster_edits_and_daily_moves():
+    ctx, _ = squad1()
+    r = roster_edit._row_of(ctx["sq"], "VAE05555")
+    ctx["sq"]["values"][r][ctx["col_of_date"]["2026-10-02"]] = "LINE 1"
+    p = a.plan_link(ctx, intent(id="VAE05555", kind="code", value="A864-34"))
+    assert p["status"] == "blocked" and "starts with 'LINE'" in p["blocked"] and p["roster"] == [] and p["day"] == []
+    p = a.plan_link(ctx, intent("daily", id="VAE05555", tab="2", to="A864-34"))
+    assert p["status"] == "blocked" and "LINE" in p["blocked"]
 
 
 def test_forced_day_off_plans_a_red_n_and_takes_the_person_off_the_distribution():

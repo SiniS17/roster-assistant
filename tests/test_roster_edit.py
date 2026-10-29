@@ -39,14 +39,18 @@ def setup():
 
 
 @contextlib.contextmanager
-def red_n_locked(on=True):
-    """config.ROSTER_RED_N_EDITABLE switched off (red N locked again) for the block."""
-    old = roster_edit.ROSTER_RED_N_EDITABLE
-    roster_edit.ROSTER_RED_N_EDITABLE = not on
+def locks(**changes):
+    """config.ROSTER_LOCKED with some rules changed for the block (e.g. red_n="always")."""
+    old = roster_edit.ROSTER_LOCKED
+    roster_edit.ROSTER_LOCKED = {**old, **changes}
     try:
         yield
     finally:
-        roster_edit.ROSTER_RED_N_EDITABLE = old
+        roster_edit.ROSTER_LOCKED = old
+
+
+def red_n_locked(on=True):
+    return locks(red_n="always" if on else "never")
 
 
 def edit(eid, date, kind="code", value="", old="", squad=3, name=None):
@@ -75,7 +79,7 @@ def test_writes_a_code_a_normal_n_and_a_clear_in_black():
 
 def test_locked_cells_are_never_overwritten():
     _, written = setup()
-    with red_n_locked():  # the old behaviour, still available through config.ROSTER_RED_N_EDITABLE = False
+    with red_n_locked():  # config.ROSTER_LOCKED['red_n'] = 'always'
         res = roster_edit.save([
             edit("VAE07778", "2026-10-01", "code", "A611", old="H ATHK"),               # a KHDT course marker
             edit("VAE02012", "2026-10-04", "code", "A611", old="N", squad=2),           # a red N
@@ -84,6 +88,34 @@ def test_locked_cells_are_never_overwritten():
     why = {k: v for r in res["squads"] for k, v in skipped({"squads": [r]}).items()}
     assert "locked" in why[("VAE07778", "2026-10-01")] and "locked" in why[("VAE02012", "2026-10-04")]
     assert written == [] and all(s["written"] == 0 for s in res["squads"])
+
+
+def test_line_prefix_cells_are_locked_whatever_the_case_and_the_prefix_list_is_configurable():
+    sources, written = setup()
+    grid = sources[3].grids["ROSTER"]
+    grid[2][3] = "LINE A864"      # VAE07777 Oct 1
+    grid[3][4] = "line-2"          # VAE07778 Oct 2
+    res = roster_edit.save([edit("VAE07777", "2026-10-01", "code", "A1", old="LINE A864"),
+                            edit("VAE07778", "2026-10-02", "clear", old="line-2"),
+                            edit("VAE07778", "2026-10-02", "forced", old="line-2")], "t")
+    why = skipped(res)
+    assert "starts with 'LINE'" in why[("VAE07777", "2026-10-01")] and "locked" in why[("VAE07778", "2026-10-02")]
+    assert written == []
+    with locks(prefixes=[]):        # the rule is just config: without the prefix the cell is editable
+        res = roster_edit.save([edit("VAE07777", "2026-10-01", "code", "A1", old="LINE A864")], "t")
+    assert res["squads"][0]["written"] == 1
+    assert roster_edit.lock_reason("LINEUP") and not roster_edit.lock_reason("A864-LINE") and not roster_edit.lock_reason("")
+
+
+def test_red_n_modes():
+    assert roster_edit.lock_reason("N", "FF0000") == "" and "red N" in roster_edit.lock_reason("N", "FF0000", bulk=True)  # bulk
+    assert roster_edit.lock_reason("N", None, bulk=True) == ""                                                          # black N
+    with locks(red_n="always"):
+        assert "red N" in roster_edit.lock_reason("N", "FF0000")
+    with locks(red_n="never"):
+        assert roster_edit.lock_reason("N", "FF0000", bulk=True) == ""
+    with locks(course_marker=False):
+        assert roster_edit.lock_reason("H ATHK") == ""
 
 
 def test_course_markers_stay_locked_even_when_red_n_is_editable():

@@ -39,7 +39,7 @@ import auth
 import assignments
 import khdt_review
 import roster_edit
-from config import DEFAULT_ROSTER_SHEET_URL, DISTRIBUTION_ROLE_MARKERS, ROSTER_RED_N_EDITABLE
+from config import DEFAULT_ROSTER_SHEET_URL, DISTRIBUTION_ROLE_MARKERS, ROSTER_LOCKED
 from distribution import build_day, build_meta
 from engine import load_khdt, mark_roster_grid
 from log_workbook import write_log_workbook
@@ -66,7 +66,7 @@ def _wants_json():
 
 @app.route("/", methods=["GET"])
 def index():
-    return render_template("index.html", red_n_editable=bool(ROSTER_RED_N_EDITABLE))
+    return render_template("index.html", roster_locks=ROSTER_LOCKED)
 
 
 @app.route("/api/roster", methods=["GET"])

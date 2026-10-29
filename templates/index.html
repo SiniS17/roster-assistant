@@ -347,7 +347,7 @@ const WD = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
 const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
-const RED_N_EDITABLE = {{ 'true' if red_n_editable else 'false' }};   // server: config.ROSTER_RED_N_EDITABLE
+const LOCKS = {{ roster_locks|tojson }};   // server: config.ROSTER_LOCKED (what is untouchable while editing)
 const S = { data:null, zoom:1, updated:new Set(), team:'', view:'roster', onlyChanged:false, edit:false, staged:{} };
 
 /* ---------- theme ---------- */
@@ -755,10 +755,13 @@ function updateEditBtn(){
 // (forced day off) is then untouchable. Clicking ONE cell on its own is a deliberate touch, so it can still be changed.
 function lockReason(e, i, bulk){
   const v = String(e.cells[i] || '').trim();
-  if(/^H /i.test(v)) return 'a KHDT course marker';
+  if(LOCKS.course_marker !== false && /^H /i.test(v)) return 'a KHDT course marker';
+  const pre = (LOCKS.prefixes || []).find(p => p && String(p).trim() && v.toUpperCase().startsWith(String(p).trim().toUpperCase()));
+  if(pre) return `a cell starting with “${String(pre).trim()}”`;
   if(v.toUpperCase() === 'N' && isRed(e.colors[i])){
-    if(!RED_N_EDITABLE) return 'a guaranteed day off (red N)';
-    if(bulk) return 'a forced day off (red N): click that cell on its own to change it';
+    const mode = LOCKS.red_n || 'bulk';
+    if(mode === 'always') return 'a guaranteed day off (red N)';
+    if(mode === 'bulk' && bulk) return 'a forced day off (red N): click that cell on its own to change it';
   }
   const c = REV && REV.changes[e.id + '|' + S.data.dates[i]];
   if(c && c.state === 'ok' && c.status !== 'rejected') return 'a KHDT change is waiting here - keep or reject it first';
@@ -787,7 +790,7 @@ function renderEditBar(){
   $('codes').innerHTML = [...codes].sort().map(c => `<option value="${esc(c)}">`).join('');
   bar.innerHTML = `<span><b>${S.edit ? 'Edit mode' : 'Staged edits'}</b>: <b>${ok}</b> change(s) staged, not saved yet</span>` +
     (bad ? `<span title="The cell was edited in the sheet after you staged it, so the edit is ignored.">${bad} out of date</span>` : '') +
-    (S.edit ? '<small>Click a cell, or drag over several people and days, then set a code, or Copy and Paste onto others. Type N for a normal day off; “Forced day off” writes a red N. H markers are locked; dragging over several cells skips red N (click one on its own to change it).</small>' : '') +
+    (S.edit ? '<small>Click a cell, or drag over several people and days, then set a code, or Copy and Paste onto others. Type N for a normal day off; “Forced day off” writes a red N. H markers and cells starting with a locked prefix (e.g. LINE) are locked; dragging over several cells skips red N (click one on its own to change it).</small>' : '') +
     (S.editNote ? `<span>${esc(S.editNote)}</span>` : '') +
     '<span class="grow"></span>' +
     `<button class="btn sm primary" data-ed2="save" ${ok && window.AUTH && AUTH.user ? '' : 'disabled'}>Save ${ok} to sheets</button>` +

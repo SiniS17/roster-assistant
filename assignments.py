@@ -586,8 +586,9 @@ def _from_daily(ctx, intent, plan, emp, live, color):
         unassigned = title_key(to) == title_key(LINK_UNASSIGNED_TITLE)
         title = LINK_UNASSIGNED_TITLE if unassigned else to
         # Roster side first: a locked or unusable cell stops everything (all or nothing).
-        if live["kind"] == "course" or is_red_n(live["text"], color):
-            raise Blocked("locked: " + ("a KHDT course marker" if live["kind"] == "course" else "guaranteed day off (red N)"))
+        why = roster_edit.lock_reason(live["text"], color, bulk=True)  # nobody touched that roster cell by hand
+        if why or live["kind"] == "course":
+            raise Blocked(why or "locked: a KHDT course marker")
         if live["kind"] == "other":
             raise Blocked(f"the roster cell holds '{live['text']}', not an aircraft code - fix the roster first")
         if live["kind"] == "role":
