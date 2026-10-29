@@ -1,7 +1,7 @@
 # CLAUDE.md — roster-assistant handover
 
 Repo: https://github.com/SiniS17/roster-assistant.git (internal VAECO tool, Flask + Google Sheets)
-Last updated: 2026-10-14 (session 5: KHDT -> roster review + export on the squads' sheets)
+Last updated: 2026-10-29 (session 6: login, Phase 1 of the Login and Linked Editing Plan; branch feature/edit)
 
 ## Working agreement
 - Owner wants a CLAUDE.md (or equivalent handover) updated after every task.
@@ -17,6 +17,7 @@ Full plain-language behaviour (marker rules, N/red-N handling, date-swap bug): `
 ## File map
 | File | Role |
 |---|---|
+| `auth.py` | Login (`/api/login`, `/api/logout`, `/api/me`), `@login_required`, `can_edit` (role seam); accounts from `Database/users.xlsx` |
 | `app.py` | Flask routes: `/`, `/api/roster`, `POST /api/khdt/preview`, `POST /api/khdt/export`, `/api/distribution`, `/api/distribution/day`, old `POST /run` |
 | `khdt_review.py` | KHDT -> proposed changes on the squads' 1st sheets (signed, nothing written) and the checked export into the real sheets |
 | `engine.py` | KHDT parsing + roster marking (`load_khdt`, `mark_roster_grid`, markers, date parsing) |
@@ -95,3 +96,11 @@ Full plain-language behaviour (marker rules, N/red-N handling, date-swap bug): `
   - To check live: the squad sheets must be shared with the service account as **Editor** for export (Viewer still reads); Squad 1/4 headers with bare day numbers assume the current month (as the page does); test Export on a copy first.
   - Not done / ideas: re-running KHDT replaces the review instead of stacking on kept changes; per-cell decisions are not merged across a multi-file month (export first, then run the next file); no "undo export" (the sheet's own version history is the way back); the review list caps at 1500 rows.
 - Update this section after each task (owner's standing instruction).
+
+## Session 6: login, Phase 1 of "Login and Linked Editing Plan" (2026-10-29, branch `feature/edit`)
+- New `auth.py`: accounts come from `Database/users.xlsx`, re-read when its mtime/size changes. People log in with their **employee ID** + password; the file already in the repo has columns `Name | ID | Password` (165 people; `Name` is shown after login). A plain `username | password` file also works (`tools/make_users.py` creates that one). IDs are case-insensitive, passwords case-sensitive, numeric Excel passwords work.
+- `@auth.login_required` (401 JSON "Please log in first.") on `POST /api/khdt/export` and `POST /run`. `POST /api/khdt/preview` and every GET stay open. `can_edit(user, squad)` returns True for any logged-in user: the seam for roles. An account removed from the file is logged out on its next request. 5 wrong passwords per (address, ID) in 5 min -> 429 (in memory, per instance).
+- `app.py`: blueprint + session cookie config (HttpOnly, SameSite=Lax, 12 h; `FLASK_COOKIE_SECURE=1` on https). `static/auth.js` adds the Log in / Log out button and dialog; `templates/index.html` loads it (one `<script>` line).
+- Tests: `tests/test_auth.py` (12), `test_khdt_review.py` export-route test now logs in first, `browser_smoke.py` logs in through the context (smoke not re-run: Playwright not installed here). `pytest tests`: 35 pass.
+- Decision (owner): `Database/users.xlsx` stays tracked in git with its plain-text passwords; security is not a concern for this test phase and the login will be replaced later (hashed passwords + roles in Postgres, Step 8 of `docs/plan_for_sql.md`). Not done on purpose: hashing, roles, CSRF tokens (SameSite=Lax + JSON bodies), password change, Edit-mode toggle (Phase 2). Set a real `FLASK_SECRET_KEY` in production.
+- Next: Phase 2 (roster edit: staged edits, batch save, locks, stale checks, behind `can_edit`).

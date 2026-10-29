@@ -9,10 +9,11 @@ GET /api/roster  the roster as JSON, built from the 1st sheet of the 4 squads' s
                  KHDT sheet with its Main/temp tabs, used to preview a KHDT run's 'temp' tab.
 GET /api/distribution      Daily Distribution: the configured spreadsheets + their day tabs
 GET /api/distribution/day  one day's zones/people (?sheet=<n>&tab=<tab title>)
+POST /api/login, /api/logout, GET /api/me   simple login (auth.py); every GET stays open to everyone.
 POST /api/khdt/preview  KHDT upload -> proposed changes to the 4 squads' sheets (nothing is written).
                  The page highlights them; each person keeps/rejects them in their own browser.
-POST /api/khdt/export   writes the kept (signed, re-checked) changes into the squads' real sheets.
-POST /run        Old KHDT flow: changes go to the KHDT sheet's 'temp' tab, never straight into 'Main'.
+POST /api/khdt/export   (login required) writes the kept (signed, re-checked) changes into the squads' real sheets.
+POST /run        (login required) Old KHDT flow: changes go to the KHDT sheet's 'temp' tab, never straight into 'Main'.
                   With the page's fetch() call it answers JSON;
                  a plain browser form post still gets the old result page. (No longer used by the page.)
 
@@ -23,6 +24,7 @@ See HOW_IT_WORKS.md for what this does to your files/sheet, and the
 import base64
 import io
 import os
+from datetime import timedelta
 
 from dotenv import load_dotenv
 
@@ -30,6 +32,7 @@ load_dotenv()
 
 from flask import Flask, flash, jsonify, redirect, render_template, request, url_for
 
+import auth
 import khdt_review
 from config import DEFAULT_ROSTER_SHEET_URL, DISTRIBUTION_ROLE_MARKERS
 from distribution import build_day, build_meta
@@ -41,6 +44,15 @@ from squad_roster import build_squads_roster
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-change-me")
+# Login cookie: not readable by scripts, not sent on cross-site POSTs, gone after 12 h.
+# Set FLASK_COOKIE_SECURE=1 on https hosting (it would break plain http://localhost).
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.environ.get("FLASK_COOKIE_SECURE") == "1",
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
+)
+app.register_blueprint(auth.bp)
 
 
 def _wants_json():
@@ -127,7 +139,7 @@ def api_distribution_day():
 
 @app.route("/api/khdt/preview", methods=["POST"])
 def api_khdt_preview():
-    """KHDT upload -> the proposed changes to the 4 squads' sheets. Writes nothing anywhere."""
+    """KHDT upload -> the proposed changes to the 4 squads' sheets. Writes nothing anywhere (so no login needed)."""
     khdt_file = request.files.get("khdt_file")
     if not khdt_file or khdt_file.filename == "":
         return jsonify(ok=False, error="Please choose a KHDT .xlsx file."), 400
@@ -150,6 +162,7 @@ def api_khdt_preview():
 
 
 @app.route("/api/khdt/export", methods=["POST"])
+@auth.login_required
 def api_khdt_export():
     """Write the changes the person kept into the squads' real sheets (each is re-checked against the live sheet)."""
     body = request.get_json(silent=True) or {}
@@ -164,6 +177,7 @@ def api_khdt_export():
 
 
 @app.route("/run", methods=["POST"])
+@auth.login_required
 def run():
     khdt_file = request.files.get("khdt_file")
     sheet_url = (request.form.get("sheet_url") or "").strip() or DEFAULT_ROSTER_SHEET_URL

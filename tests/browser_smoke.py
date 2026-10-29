@@ -56,6 +56,16 @@ def main():
     fake_write.calls = []
     khdt_review.write_roster_updates = fake_write
 
+    import tempfile
+
+    import auth
+    users = os.path.join(tempfile.mkdtemp(), "users.xlsx")  # export needs a login
+    ub = openpyxl.Workbook()
+    ub.active.append(["username", "password"])
+    ub.active.append(["smoke", "pw"])
+    ub.save(users)
+    auth.USERS_FILE = users
+
     server = make_server("127.0.0.1", 0, web.app, threaded=True)
     port = server.server_port
     threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -67,6 +77,7 @@ def main():
         browser = p.chromium.launch()
         ctx = browser.new_context(viewport={"width": 1400, "height": 800})
         page = ctx.new_page()
+        ctx.request.post(url + "api/login", data={"username": "smoke", "password": "pw"})  # cookie is shared with the page
         errors = []
         page.on("pageerror", lambda e: errors.append(str(e)))
         page.goto(url)
