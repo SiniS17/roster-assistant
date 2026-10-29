@@ -48,6 +48,29 @@ DISTRIBUTION_ROLE_MARKERS = {
     "foreman": "fm",
 }
 
+# Roster <-> Daily Distribution link (assignments.py, Phase 3: dry-run only, nothing is written).
+# How each squad's roster cell relates to its day tab, matched BY POSITION like the names above:
+#   "zone"     - the roster cell holds aircraft + zone ('A864-34') and the day tab has a section with that
+#                same title (Squads 1 and 4; day tabs are named '1', '2' ...).
+#   "aircraft" - the roster cell holds the aircraft only ('A611'); the zone exists only on the day tab
+#                ('ZONE 128' on tab 'A611-OCT06') (Squads 2 and 3).
+DISTRIBUTION_SQUAD_LAYOUTS = ["zone", "aircraft", "aircraft", "zone"]
+
+# Section a person is placed in when the roster gives an aircraft but no zone (created at the bottom of
+# a table on the day tab if it does not exist yet).
+LINK_UNASSIGNED_TITLE = "UNASSIGNED"
+
+# When somebody is taken out of the Daily Distribution on purpose (not moved to another zone): False = the
+# roster cell is left as it is, True = it is cleared. (The plan left this open; False loses nothing.)
+LINK_REMOVE_CLEARS_ROSTER = False
+
+# What the edit functions write on the day side (assignments.commit, Phase 4):
+#   "database" - one flat tab per aircraft and day, named like 'A123-OCT29': row 1 = Name | VAEID | Function |
+#                Zone | remark, one person per row from row 2 (daily_db.py). The tab is created when missing.
+#                Hand-made day tabs are only read, never written.
+#   "legacy"   - fill the hand-made day tabs cell by cell (the Phase 3 dry-run plans; commit refuses them).
+DAILY_WRITE_FORMAT = "database"
+
 # How long (seconds) fetched sheet data is reused before asking Google again.
 # The page's reload button always bypasses this.
 DISTRIBUTION_CACHE_SECONDS = 60
@@ -108,3 +131,16 @@ LOG_EVENT_LABELS = {
 }
 
 # bot email:khdt-roster-bot@khdt-roster.iam.gserviceaccount.com
+
+# Roster editor: what is UNTOUCHABLE while editing. One place for the page (it gets this dict) and the server
+# (roster_edit.lock_reason). A cell matching any rule cannot be overwritten, cleared or pasted over by hand.
+ROSTER_LOCKED = {
+    # KHDT course markers ('H ATHK' ...): KHDT owns them. True = locked.
+    "course_marker": True,
+    # Red N (forced day off): "bulk" = locked when the action covers several cells (a drag over more than one
+    # cell, or a paste that fills several) but a single click on one cell can still change it;
+    # "always" = never editable by hand; "never" = always editable.
+    "red_n": "bulk",
+    # A cell whose text STARTS with one of these (case-insensitive) is locked, e.g. "LINE", "LINE 2", "line-A864".
+    "prefixes": ["LINE"],
+}

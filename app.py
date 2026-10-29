@@ -9,10 +9,14 @@ GET /api/roster  the roster as JSON, built from the 1st sheet of the 4 squads' s
                  KHDT sheet with its Main/temp tabs, used to preview a KHDT run's 'temp' tab.
 GET /api/distribution      Daily Distribution: the configured spreadsheets + their day tabs
 GET /api/distribution/day  one day's zones/people (?sheet=<n>&tab=<tab title>)
+POST /api/login, /api/logout, GET /api/me   simple login (auth.py); every GET stays open to everyone.
+POST /api/roster/save   (login required) hand edits of roster cells (roster_edit.py): staged on the page, re-checked, then written.
+POST /api/link/dry-run  (login required) roster <-> Daily Distribution link, dry run only: the cells a roster edit or a
+                 daily move would write on both sides (assignments.py). Nothing is written.
 POST /api/khdt/preview  KHDT upload -> proposed changes to the 4 squads' sheets (nothing is written).
                  The page highlights them; each person keeps/rejects them in their own browser.
-POST /api/khdt/export   writes the kept (signed, re-checked) changes into the squads' real sheets.
-POST /run        Old KHDT flow: changes go to the KHDT sheet's 'temp' tab, never straight into 'Main'.
+POST /api/khdt/export   (login required) writes the kept (signed, re-checked) changes into the squads' real sheets.
+POST /run        (login required) Old KHDT flow: changes go to the KHDT sheet's 'temp' tab, never straight into 'Main'.
                   With the page's fetch() call it answers JSON;
                  a plain browser form post still gets the old result page. (No longer used by the page.)
 
@@ -23,6 +27,7 @@ See HOW_IT_WORKS.md for what this does to your files/sheet, and the
 import base64
 import io
 import os
+from datetime import timedelta
 
 from dotenv import load_dotenv
 
@@ -30,8 +35,11 @@ load_dotenv()
 
 from flask import Flask, flash, jsonify, redirect, render_template, request, url_for
 
+import auth
+import assignments
 import khdt_review
-from config import DEFAULT_ROSTER_SHEET_URL, DISTRIBUTION_ROLE_MARKERS
+import roster_edit
+from config import DEFAULT_ROSTER_SHEET_URL, DISTRIBUTION_ROLE_MARKERS, ROSTER_LOCKED
 from distribution import build_day, build_meta
 from engine import load_khdt, mark_roster_grid
 from log_workbook import write_log_workbook
@@ -41,6 +49,15 @@ from squad_roster import build_squads_roster
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-change-me")
+# Login cookie: not readable by scripts, not sent on cross-site POSTs, gone after 12 h.
+# Set FLASK_COOKIE_SECURE=1 on https hosting (it would break plain http://localhost).
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_SECURE=os.environ.get("FLASK_COOKIE_SECURE") == "1",
+    PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
+)
+app.register_blueprint(auth.bp)
 
 
 def _wants_json():
@@ -49,7 +66,7 @@ def _wants_json():
 
 @app.route("/", methods=["GET"])
 def index():
-    return render_template("index.html")
+    return render_template("index.html", roster_locks=ROSTER_LOCKED)
 
 
 @app.route("/api/roster", methods=["GET"])
@@ -125,9 +142,60 @@ def api_distribution_day():
     return jsonify(ok=True, **day)
 
 
+@app.route("/api/roster/save", methods=["POST"])
+@auth.login_required
+def api_roster_save():
+    """Write the hand edits staged on the roster page into the squads' sheets (each is re-checked against the live sheet)."""
+    body = request.get_json(silent=True) or {}
+    edits = body.get("edits")
+    if not isinstance(edits, list) or not edits:
+        return jsonify(ok=False, error="There are no edits to save."), 400
+    try:
+        result = roster_edit.save([e for e in edits if isinstance(e, dict)], auth.current_user())
+    except Exception as e:
+        return jsonify(ok=False, error=f"{type(e).__name__}: {e}"), 400
+    return jsonify(ok=True, **result)
+
+
+@app.route("/api/link/dry-run", methods=["POST"])
+@auth.login_required
+def api_link_dry_run():
+    """Roster <-> Daily Distribution link, DRY RUN: the exact cells a roster edit or a daily move would
+    write on both sides. Reads fresh sheets, writes nothing (assignments.py)."""
+    body = request.get_json(silent=True) or {}
+    intents = body.get("intents")
+    if not isinstance(intents, list) or not intents:
+        return jsonify(ok=False, error="There is nothing to plan."), 400
+    user = auth.current_user()
+    intents = [i for i in intents if isinstance(i, dict)]
+    try:
+        result = assignments.dry_run(intents, user)
+    except Exception as e:
+        return jsonify(ok=False, error=f"{type(e).__name__}: {e}"), 400
+    return jsonify(ok=True, **result)
+
+
+@app.route("/api/link/save", methods=["POST"])
+@auth.login_required
+def api_link_save():
+    """Phase 4: write a roster edit or a daily move to BOTH sides - the roster cell, then the database-style
+    day tab ('A123-OCT29': Name | VAEID | Function | Zone | remark), which is created when missing. The same
+    intents as /api/link/dry-run, planned fresh against the live sheets; blocked ones are reported, not forced."""
+    body = request.get_json(silent=True) or {}
+    intents = body.get("intents")
+    if not isinstance(intents, list) or not intents:
+        return jsonify(ok=False, error="There is nothing to save."), 400
+    intents = [i for i in intents if isinstance(i, dict)]
+    try:
+        result = assignments.commit(intents, auth.current_user())
+    except Exception as e:
+        return jsonify(ok=False, error=f"{type(e).__name__}: {e}"), 400
+    return jsonify(ok=True, **result)
+
+
 @app.route("/api/khdt/preview", methods=["POST"])
 def api_khdt_preview():
-    """KHDT upload -> the proposed changes to the 4 squads' sheets. Writes nothing anywhere."""
+    """KHDT upload -> the proposed changes to the 4 squads' sheets. Writes nothing anywhere (so no login needed)."""
     khdt_file = request.files.get("khdt_file")
     if not khdt_file or khdt_file.filename == "":
         return jsonify(ok=False, error="Please choose a KHDT .xlsx file."), 400
@@ -150,6 +218,7 @@ def api_khdt_preview():
 
 
 @app.route("/api/khdt/export", methods=["POST"])
+@auth.login_required
 def api_khdt_export():
     """Write the changes the person kept into the squads' real sheets (each is re-checked against the live sheet)."""
     body = request.get_json(silent=True) or {}
@@ -164,6 +233,7 @@ def api_khdt_export():
 
 
 @app.route("/run", methods=["POST"])
+@auth.login_required
 def run():
     khdt_file = request.files.get("khdt_file")
     sheet_url = (request.form.get("sheet_url") or "").strip() or DEFAULT_ROSTER_SHEET_URL

@@ -13,9 +13,9 @@ Roster Assistant: discussion draft, 28 October 2026. No code written and no file
 
 ## 2. Roster editing
 
-- In edit mode, click a cell or drag a date range for one person and choose a value: an **aircraft code** (free text with suggestions from codes already in use), **normal N** (black), or **clear**.
+- In edit mode, click a cell or drag a date range for one person and choose a value: an **aircraft code** (free text with suggestions from codes already in use), **normal N** (black; typing `N` does the same), **forced day off** (red N, a button), or **clear**.
 - Edits are staged, then saved in one batch. This reuses the proven `khdt_review.export` checks: same employee on that row, same date column, cell still holds what the page saw. A cell that changed meanwhile is skipped and reported.
-- **Locked cells:** red N and `H …` course markers cannot be overwritten by hand (KHDT owns those), and the editor cannot write red N.
+- **Locked cells:** `H …` course markers cannot be overwritten by hand (KHDT owns those). The editor writes a red N only through the **Forced day off** button, and a red N can be changed by a single click but is skipped by drags and multi-cell pastes. Cells starting with `LINE` are locked too. What is locked is one setting: `config.ROSTER_LOCKED`.
 - `TĐ/PPC/FM` is left out of phase 1. Day-tab labels already override roster codes for crew on squads 1/4, so editing them would create confusing precedence.
 
 ## 3. The link between roster and daily distribution
@@ -31,7 +31,7 @@ The sync is exact for squads 1/4. For squads 2/3 it is lossy: the zone lives onl
 
 - **Daily → roster:** moving someone into a zone sets their roster cell to the aircraft, plus the zone on squads 1/4. Removing them from a zone clears the aircraft part (or leaves it, to be decided).
 - **Roster → daily:** setting `A864-34` places the person in that section on squads 1/4. For squads 2/3, or when no zone is given, they go into an `UNASSIGNED` section on that day's tab until someone moves them to a zone.
-- **Normal N** removes the person from that day's distribution.
+- **Normal N** and **forced day off** (red N) remove the person from that day's distribution.
 - **Missing day tab:** the big open point. Options are to create it by duplicating a template tab, or to only update days whose tab already exists and tell the user otherwise.
 - One code per cell, so two aircraft in one day is not supported. `@16H00` shifts are also out of scope for now; both are dismissed explicitly.
 
@@ -50,10 +50,10 @@ This part is exactly what the PostgreSQL plan makes easy. The code should sit be
 
 ## 5. Phases
 
-1. Login, logout, `/api/me`, and guards on existing write routes, with tests.
-2. Roster edit: staged edits, batch save, locks, stale checks, with tests.
-3. Link logic, dry-run only, per-squad layout adapters.
-4. Daily edit, written to the day tab and the roster.
+1. Login, logout, `/api/me`, and guards on existing write routes, with tests. **Done.**
+2. Roster edit: staged edits, batch save, locks, stale checks, with tests. **Done.**
+3. Link logic, dry-run only, per-squad layout adapters. **Done** (`assignments.py`, `POST /api/link/dry-run`, `tools/link_dry_run.py`; see `CLAUDE.md` session 8 for the rules and the choices made on the open points).
+4. Daily edit, written to the day tab and the roster. **Done** (`assignments.commit`, `POST /api/link/save`). The day side is a database-style tab per aircraft and day (`A123-OCT29`: `Name | VAEID | Function | Zone | remark`, see `daily_db.py` and `CLAUDE.md` session 9), not the hand-made layout; the Daily page reads it.
 5. Roster edit, now also writing to the day tab (create or modify).
 6. Mismatch indicator, docs, and the `CLAUDE.md` entry.
 

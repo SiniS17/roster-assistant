@@ -12,6 +12,7 @@ sheets_client.py  Google auth, read grid + font colours, batch write
 roster_view.py    Roster JSON for one tab; tab listing; temp rebuild; Main-vs-temp diff
 squad_roster.py   Roster page data: merge of the 4 squads' 1st sheets
 distribution.py   Daily Distribution: sources, parsing, caching
+assignments.py    Roster <-> day-tab link, dry run only: layout adapters, cell positions, plans
 log_workbook.py   Builds the downloadable .xlsx run log
 templates/
   index.html      Single-page UI (roster, distribution, KHDT dialog; JS inline)
@@ -32,6 +33,7 @@ HOW_IT_WORKS.md   Behaviour rules and sheet formats
 | `GET /api/roster` | Combined squad roster. With `?url=&gid=` it reads one KHDT-sheet tab instead (Main/temp preview) |
 | `GET /api/distribution` | Squads, their info blocks, and day-tab lists |
 | `GET /api/distribution/day?sheet=<n>&tab=<title>` | One day's zones and people |
+| `POST /api/link/dry-run` | Login required. Plans a roster edit or daily move on both sides; writes nothing |
 | `POST /run` | KHDT upload; writes to `temp`; JSON for the page's fetch call, HTML for a plain form post |
 
 `?refresh=1` on the GET APIs skips the 60 s cache.

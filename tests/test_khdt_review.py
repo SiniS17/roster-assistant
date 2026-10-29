@@ -192,6 +192,20 @@ def test_routes_preview_then_export():
     assert written == []
     assert {c["date"] for c in j["changes"]} == {"2026-10-01", "2026-10-02"}
 
+    # export writes to the sheets, so it needs a login (auth.py)
+    assert client.post("/api/khdt/export", json={"changes": j["changes"][:1]}).status_code == 401
+    import tempfile
+
+    import auth
+    users = os.path.join(tempfile.mkdtemp(), "users.xlsx")
+    ub = openpyxl.Workbook()
+    ub.active.append(["username", "password"])
+    ub.active.append(["tester", "pw"])
+    ub.save(users)
+    auth.USERS_FILE = users
+    auth._cache.update(key=None, users={})
+    assert client.post("/api/login", json={"username": "tester", "password": "pw"}).status_code == 200
+
     k = client.post("/api/khdt/export", json={"changes": j["changes"][:1]}).get_json()
     assert k["ok"] and k["squads"][0]["written"] == 1 and len(written) == 1
 

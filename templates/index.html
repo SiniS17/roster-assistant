@@ -151,6 +151,17 @@ table.rl{width:100%;border-collapse:collapse;font-size:12.5px}
 .okline{margin:8px 0 2px}
 .exp-res{margin-top:14px}
 
+/* roster editing (Edit mode) */
+#editBtn.on{border-color:var(--green);box-shadow:inset 0 -2px var(--green);color:var(--text)}
+body.editing td.day{cursor:cell;user-select:none}
+body.editing td.day[data-lck]{cursor:not-allowed}
+.sel{outline:2px solid var(--blue);outline-offset:-2px;background-color:rgba(76,141,255,.18)}
+.stg{outline:2px solid var(--blue);outline-offset:-2px}
+.edbar{display:flex;flex-wrap:wrap;gap:6px 16px;align-items:center;padding:8px 16px;border-bottom:1px solid var(--line);background:var(--panel2)}
+.edbar[hidden]{display:none}
+.edbar .grow{flex:1}
+.pop input.code{width:100%;margin-top:10px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel2)}
+
 /* side menu */
 .scrim{position:fixed;inset:0;background:rgba(0,0,0,.55);opacity:0;pointer-events:none;transition:opacity .2s;z-index:20}
 .scrim.on{opacity:1;pointer-events:auto}
@@ -181,7 +192,7 @@ dialog::backdrop{background:rgba(0,0,0,.65)}
 .err{margin-top:14px;padding:10px 12px;border:1px solid rgba(239,83,80,.4);border-radius:8px;background:rgba(239,83,80,.1);color:var(--err-text);white-space:pre-wrap;word-break:break-word}
 
 /* Daily Distribution view */
-body[data-view="dist"] .zoom, body[data-view="dist"] #team, body[data-view="dist"] #q, body[data-view="dist"] #month, body[data-view="dist"] #note, body[data-view="dist"] #review, body[data-view="dist"] #pop{display:none!important}
+body[data-view="dist"] .zoom, body[data-view="dist"] #team, body[data-view="dist"] #q, body[data-view="dist"] #month, body[data-view="dist"] #note, body[data-view="dist"] #review, body[data-view="dist"] #pop, body[data-view="dist"] #editBtn, body[data-view="dist"] #editbar, body[data-view="dist"] #edpop{display:none!important}
 .daystrip{display:flex;gap:6px;overflow-x:auto;width:100%;scrollbar-width:thin;padding:1px 0}
 .dbtn{flex:none;min-width:62px;padding:5px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);color:var(--muted);text-align:center;line-height:1.25}
 .dbtn small{display:block;font-size:10px;letter-spacing:.08em;font-weight:600}
@@ -252,6 +263,7 @@ table.dt{width:100%;min-width:600px;table-layout:fixed;font-size:12.5px}
   <div class="zoom"><button id="zOut" aria-label="Zoom out">−</button><span id="zVal">100%</span><button id="zIn" aria-label="Zoom in">+</button></div>
   <select class="search" id="team" aria-label="Filter by Đội" hidden></select>
   <input class="search" id="q" type="search" placeholder="Search name or ID" aria-label="Search employees">
+  <button class="btn sm" id="editBtn" type="button" hidden title="Edit roster cells by hand">Edit mode</button>
   <button class="icon-btn" id="reload" aria-label="Reload roster" title="Reload from Google Sheet">
     <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7M21 4v5h-5"/></svg>
   </button>
@@ -264,9 +276,12 @@ table.dt{width:100%;min-width:600px;table-layout:fixed;font-size:12.5px}
 <div class="stats" id="stats"></div>
 <div class="note" id="note" hidden></div>
 <div class="review" id="review" hidden></div>
+<div class="edbar" id="editbar" hidden></div>
 <div class="wrap" id="wrap"><div class="msg" id="msg">Loading roster…</div></div>
 
 <div class="pop" id="pop" hidden></div>
+<div class="pop" id="edpop" hidden></div>
+<datalist id="codes"></datalist>
 <div class="scrim" id="scrim"></div>
 <aside class="drawer" id="drawer" aria-label="Menu">
   <header><div class="logo">R</div><div class="brand">Roster Assistant<small>Menu</small></div></header>
@@ -310,6 +325,13 @@ table.dt{width:100%;min-width:600px;table-layout:fixed;font-size:12.5px}
   </div>
 </dialog>
 
+<dialog id="saveDlg">
+  <div class="dlg">
+    <h2>Save roster edits</h2>
+    <div id="saveBody"></div>
+  </div>
+</dialog>
+
 <dialog id="expDlg">
   <div class="dlg">
     <h2>Export to the squad sheets</h2>
@@ -325,7 +347,8 @@ const WD = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
 const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
-const S = { data:null, zoom:1, updated:new Set(), team:'', view:'roster', onlyChanged:false };
+const LOCKS = {{ roster_locks|tojson }};   // server: config.ROSTER_LOCKED (what is untouchable while editing)
+const S = { data:null, zoom:1, updated:new Set(), team:'', view:'roster', onlyChanged:false, edit:false, staged:{} };
 
 /* ---------- theme ---------- */
 function syncThemeBtn(){
@@ -412,6 +435,8 @@ function revCounts(){
 }
 // What a roster cell shows: the live value, or - while a KHDT change is under review - the proposed one.
 function eff(e, i){
+  const sg = S.staged[e.id + '|' + S.data.dates[i]];
+  if(sg && sg.state === 'ok') return {v:sg.text, color:sg.kind === 'forced' ? 'FF0000' : null, c:null, st:'staged', sg};
   const c = REV && REV.changes[e.id + '|' + S.data.dates[i]];
   if(c && c.state === 'ok'){
     if(c.status === 'rejected') return {v:e.cells[i], color:e.colors[i], c, st:'rejected'};
@@ -434,6 +459,7 @@ async function load(force){
     if(!j.ok) throw new Error(j.error || 'Unknown error');
     S.data = j;
     reconcile();
+    reconcileStaged();
     render();
   }catch(e){
     S.data = null; $('stats').innerHTML = ''; $('review').hidden = true;
@@ -607,6 +633,7 @@ function render(){
   $('month').textContent = first.getMonth() === last.getMonth() ? `${MONTHS[first.getMonth()]} ${first.getFullYear()}`
     : `${MON[first.getMonth()]} – ${MON[last.getMonth()]} ${last.getFullYear()}`;
   renderReviewBar();
+  renderEditBar();
 
   // filters: Đội + search
   const hi = d.info_headers.findIndex(t => /(^|[^a-z])doi($|[^a-z])/.test(fold(t)));
@@ -655,6 +682,7 @@ function render(){
   });
   h += '</tr></thead><tbody>';
   // two cells merge into one wide box when they show the same thing in the same review state
+  const tdAttr = (e, i) => S.edit ? ` data-e="${esc(e.id)}" data-i="${i}"${lockReason(e, i) ? ' data-lck="1"' : ''}` : '';
   const sig = x => { const k = kindOf(x.v, x.color); return k ? x.v.trim().toUpperCase() + '|' + k + '|' + (x.st || '') + '|' + (x.c ? x.c.kind : '') : null; };
   rows.forEach((e, n) => {
     const initial = (e.name.trim()[0] || '?').toUpperCase();
@@ -670,24 +698,25 @@ function render(){
           const nv = x.c.new;
           ghost = `<span class="chip ghost" data-keys="${esc(x.c.id + '|' + x.c.date)}" title="${esc(e.name)} · KHDT change rejected (${esc(nv)}) - click to reconsider">${esc(/^H /i.test(nv.trim()) ? nv.trim().slice(2) : nv)}</span>`;
         }
-        h += `<td class="day ${isWe(dt) ? 'we':''} ${sameDay(dt,today) ? 'today':''}">${ghost}</td>`; i++; continue;
+        h += `<td class="day ${isWe(dt) ? 'we':''} ${sameDay(dt,today) ? 'today':''} ${x.st === 'staged' ? 'stg':''}"${tdAttr(e, i)}${x.st === 'staged' ? ' title="Staged: cleared"' : ''}>${ghost}</td>`; i++; continue;
       }
       const key = sig(x);
       let j = i + 1;
-      while(j < N && sig(E[j]) === key) j++;
+      while(!S.edit && j < N && sig(E[j]) === key) j++;
       const span = j - i, end = dates[j-1];
       const keys = E.slice(i, j).filter(y => y.c).map(y => y.c.id + '|' + y.c.date);
       const hasToday = dates.slice(i, j).some(y => sameDay(y, today));
       const up = e.cells.slice(i, j).some((_, y) => S.updated.has(e.row + ':' + d.cols[i+y])) ? ' upd' : '';
       const style = k === 'o' ? ` style="--h:${hue(v.trim().toUpperCase())}"` : '';
       const cls = (x.st === 'pending' ? ' pend' : x.st === 'kept' ? ' kept' : x.st === 'rejected' ? ' rej' : '') +
-                  (x.c && x.c.kind === 'conflict' && x.st !== 'rejected' ? ' cfl' : '');
+                  (x.c && x.c.kind === 'conflict' && x.st !== 'rejected' ? ' cfl' : '') + (x.st === 'staged' ? ' stg' : '');
       const range = span > 1 ? `${dt.getDate()}/${dt.getMonth()+1} – ${end.getDate()}/${end.getMonth()+1} (${span} days)` : `${dt.getDate()}/${dt.getMonth()+1}`;
       const label = k === 'h' ? v.trim().slice(2) : v;
       let tip = `${e.name} · ${range} · ${v}`;
-      if(x.c && x.st !== 'rejected') tip += ` · was: ${x.c.old || '(empty)'} · KHDT ${x.st === 'kept' ? 'kept' : 'not decided yet'} - click to decide`;
+      if(x.st === 'staged') tip += ` · staged edit (was: ${x.sg.old || '(empty)'}) - not saved yet`;
+      else if(x.c && x.st !== 'rejected') tip += ` · was: ${x.c.old || '(empty)'} · KHDT ${x.st === 'kept' ? 'kept' : 'not decided yet'} - click to decide`;
       else if(x.st === 'rejected') tip += ' · KHDT change rejected - click to reconsider';
-      h += `<td class="day ${span > 1 ? 'span':''} ${span === 1 && isWe(dt) ? 'we':''} ${hasToday ? 'today':''}" colspan="${span}">` +
+      h += `<td class="day ${span > 1 ? 'span':''} ${span === 1 && isWe(dt) ? 'we':''} ${hasToday ? 'today':''}" colspan="${span}"${tdAttr(e, i)}>` +
            `<span class="chip k-${k}${up}${cls}"${style}${keys.length ? ` data-keys="${esc(keys.join(','))}"` : ''} title="${esc(tip)}">${esc(label)}</span></td>`;
       i = j;
     }
@@ -704,9 +733,255 @@ function setView(v){
   $('navRoster').classList.toggle('on', v === 'roster');
   $('navDist').classList.toggle('on', v === 'dist');
   try{ history.replaceState(null, '', v === 'dist' ? '#distribution' : location.pathname + location.search); }catch(e){}
-  $('tabs').innerHTML = ''; $('stats').innerHTML = ''; $('note').hidden = true; $('review').hidden = true; $('pop').hidden = true;
+  $('tabs').innerHTML = ''; $('stats').innerHTML = ''; $('note').hidden = true; $('review').hidden = true; $('pop').hidden = true; $('editbar').hidden = true; $('edpop').hidden = true;
   $('sub').textContent = v === 'dist' ? 'VAECO · Daily Distribution' : 'VAECO';
   if(v === 'dist') loadDist(); else load();
+}
+
+/* ---------- roster editing: pick cells, stage edits, save them to the squads' sheets ---------- */
+// S.staged = { 'ID|YYYY-MM-DD': {squad, id, name, date, old, kind:'code'|'n'|'forced'|'clear', value, text, old_red, state:'ok'|'stale'|'missing'} }   // forced = red N
+// Staged edits live in this page only until Save; the server re-checks every one against the live sheet (roster_edit.py).
+const canEdit = () => !!(window.AUTH && AUTH.canEdit);
+const stagedAll = () => Object.values(S.staged);
+function updateEditBtn(){
+  const ok = S.view === 'roster' && canEdit() && S.data && S.data.view === 'squads';
+  if(!ok && S.edit){ S.edit = false; document.body.classList.remove('editing'); closeEd(); }
+  $('editBtn').hidden = !ok;
+  $('editBtn').classList.toggle('on', S.edit);
+  $('editBtn').textContent = S.edit ? 'Editing' : 'Edit mode';
+}
+// Why a cell can't be edited by hand ('' = it can). Same rules as the server's locks, plus pending KHDT changes.
+// bulk = the action covers more than one cell (a drag over several cells, or a paste that fills several): a red N
+// (forced day off) is then untouchable. Clicking ONE cell on its own is a deliberate touch, so it can still be changed.
+function lockReason(e, i, bulk){
+  const v = String(e.cells[i] || '').trim();
+  if(LOCKS.course_marker !== false && /^H /i.test(v)) return 'a KHDT course marker';
+  const pre = (LOCKS.prefixes || []).find(p => p && String(p).trim() && v.toUpperCase().startsWith(String(p).trim().toUpperCase()));
+  if(pre) return `a cell starting with “${String(pre).trim()}”`;
+  if(v.toUpperCase() === 'N' && isRed(e.colors[i])){
+    const mode = LOCKS.red_n || 'bulk';
+    if(mode === 'always') return 'a guaranteed day off (red N)';
+    if(mode === 'bulk' && bulk) return 'a forced day off (red N): click that cell on its own to change it';
+  }
+  const c = REV && REV.changes[e.id + '|' + S.data.dates[i]];
+  if(c && c.state === 'ok' && c.status !== 'rejected') return 'a KHDT change is waiting here - keep or reject it first';
+  return '';
+}
+const liveIsRed = (e, i) => String(e.cells[i] || '').trim().toUpperCase() === 'N' && !!isRed(e.colors[i]);
+function reconcileStaged(){
+  const d = S.data; if(!d || d.view !== 'squads') return;
+  const emp = new Map(d.employees.map(e => [e.id, e])), di = new Map(d.dates.map((x, i) => [x, i]));
+  for(const [k, s] of Object.entries(S.staged)){
+    const e = emp.get(s.id), i = di.get(s.date);
+    if(!e || i === undefined){ s.state = 'missing'; continue; }
+    const live = String(e.cells[i] || '').trim(), liveRed = liveIsRed(e, i);
+    // text AND colour: a black N and a red N are different cells
+    if(live === s.text && (s.text !== 'N' || (s.kind === 'forced') === liveRed)) delete S.staged[k];  // the sheet already says this (e.g. just saved)
+    else s.state = live === s.old && (s.old !== 'N' || !!s.old_red === liveRed) ? 'ok' : 'stale';     // somebody changed the cell meanwhile: not saved
+  }
+}
+function renderEditBar(){
+  const bar = $('editbar'), all = stagedAll(), ok = all.filter(s => s.state === 'ok').length, bad = all.length - ok;
+  updateEditBtn();
+  if(!S.edit && !all.length){ bar.hidden = true; return; }
+  bar.hidden = false;
+  const codes = new Set();
+  S.data.employees.forEach(e => e.cells.forEach((v, i) => { if(v && kindOf(v, e.colors[i]) === 'o') codes.add(v.trim().toUpperCase()); }));
+  $('codes').innerHTML = [...codes].sort().map(c => `<option value="${esc(c)}">`).join('');
+  bar.innerHTML = `<span><b>${S.edit ? 'Edit mode' : 'Staged edits'}</b>: <b>${ok}</b> change(s) staged, not saved yet</span>` +
+    (bad ? `<span title="The cell was edited in the sheet after you staged it, so the edit is ignored.">${bad} out of date</span>` : '') +
+    (S.edit ? '<small>Click a cell, or drag over several people and days, then set a code, or Copy and Paste onto others. Type N for a normal day off; “Forced day off” writes a red N. H markers and cells starting with a locked prefix (e.g. LINE) are locked; dragging over several cells skips red N (click one on its own to change it).</small>' : '') +
+    (S.editNote ? `<span>${esc(S.editNote)}</span>` : '') +
+    '<span class="grow"></span>' +
+    `<button class="btn sm primary" data-ed2="save" ${ok && window.AUTH && AUTH.user ? '' : 'disabled'}>Save ${ok} to sheets</button>` +
+    `<button class="btn sm" data-ed2="discard" ${all.length ? '' : 'disabled'}>Discard staged</button>` +
+    (S.edit ? '<button class="btn sm" data-ed2="exit">Exit edit mode</button>' : '');
+}
+$('editbar').addEventListener('click', ev => {
+  const b = ev.target.closest('[data-ed2]'); if(!b) return;
+  if(b.dataset.ed2 === 'save') saveEdits();
+  else if(b.dataset.ed2 === 'discard'){ if(confirm('Discard all staged edits? Nothing has been written to the sheets.')){ S.staged = {}; render(); } }
+  else if(b.dataset.ed2 === 'exit') $('editBtn').click();
+});
+$('editBtn').onclick = () => {
+  S.edit = !S.edit; document.body.classList.toggle('editing', S.edit); closeEd(); closePop();
+  if(S.data) render();
+};
+document.addEventListener('auth-changed', () => { if(S.data) render(); else updateEditBtn(); });
+window.addEventListener('beforeunload', ev => { if(stagedAll().length){ ev.preventDefault(); ev.returnValue = ''; } });
+
+// selection: mouse down on a cell, drag over any block of people x days, release to open the editor.
+// Copy / Paste work on the same block (buttons in the editor, or Ctrl+C / Ctrl+V).
+let drag = null;
+S.clip = null;   // {h, w, cells:[[text|null]]}; null = a locked cell that was not copied
+const edpop = $('edpop');
+const rowIds = () => { const seen = [], set = new Set(); $('wrap').querySelectorAll('td.day[data-e]').forEach(td => { if(!set.has(td.dataset.e)){ set.add(td.dataset.e); seen.push(td.dataset.e); } }); return seen; };
+function dragRect(){
+  const ids = rowIds(), ra = ids.indexOf(drag.ea), rb = ids.indexOf(drag.eb);
+  return {ids: ids.slice(Math.min(ra, rb), Math.max(ra, rb) + 1), lo: Math.min(drag.a, drag.b), hi: Math.max(drag.a, drag.b)};
+}
+function paintSel(){
+  $('wrap').querySelectorAll('td.sel').forEach(td => td.classList.remove('sel'));
+  if(!drag) return;
+  const {ids, lo, hi} = dragRect(), set = new Set(ids), bulk = ids.length * (hi - lo + 1) > 1;
+  $('wrap').querySelectorAll('td.day[data-e]').forEach(td => {
+    const i = +td.dataset.i, e = bulk && empById(td.dataset.e);
+    if(set.has(td.dataset.e) && i >= lo && i <= hi && !td.hasAttribute('data-lck') && !(e && lockReason(e, i, true))) td.classList.add('sel');
+  });
+}
+function closeEd(){ edpop.hidden = true; drag = null; paintSel(); }
+$('wrap').addEventListener('mousedown', ev => {
+  if(!S.edit || ev.button !== 0) return;
+  const td = ev.target.closest('td.day[data-e]'); if(!td || td.hasAttribute('data-lck')) return;
+  ev.preventDefault(); closePop(); edpop.hidden = true; S.editNote = '';
+  drag = {ea: td.dataset.e, eb: td.dataset.e, a: +td.dataset.i, b: +td.dataset.i, td, dragging: true}; paintSel();
+});
+$('wrap').addEventListener('mouseover', ev => {
+  if(!drag || !drag.dragging) return;
+  const td = ev.target.closest('td.day[data-e]');
+  if(td){ drag.eb = td.dataset.e; drag.b = +td.dataset.i; drag.td = td; paintSel(); }
+});
+document.addEventListener('mouseup', () => { if(drag && drag.dragging){ drag.dragging = false; openEditor(); } });
+document.addEventListener('mousedown', ev => { if(!edpop.hidden && !edpop.contains(ev.target) && !ev.target.closest('td.day[data-e]')) closeEd(); });
+document.addEventListener('keydown', ev => {
+  if(ev.key === 'Escape'){ closeEd(); return; }
+  if(!S.edit || !drag || !(ev.ctrlKey || ev.metaKey)) return;
+  const k = ev.key.toLowerCase();
+  if(k !== 'c' && k !== 'v') return;
+  const inp = ev.target && ev.target.id === 'edCode' ? ev.target : null;
+  // typing in the code box keeps the normal text copy/paste; with an empty box the shortcut acts on the cells
+  if(inp && (inp.value || (k === 'c' && inp.selectionStart !== inp.selectionEnd))) return;
+  if(inp === null && ev.target && /^(input|textarea|select)$/i.test(ev.target.tagName)) return;
+  if(k === 'v' && !S.clip) return;
+  ev.preventDefault(); if(k === 'c') copySel(); else pasteSel();
+});
+
+const effRed = (e, i) => { const sg = S.staged[e.id + '|' + S.data.dates[i]]; return sg ? sg.kind === 'forced' : liveIsRed(e, i); };
+const effText = (e, i) => { const sg = S.staged[e.id + '|' + S.data.dates[i]]; return sg ? sg.text : String(e.cells[i] || '').trim(); };
+const empById = id => S.data.employees.find(x => x.id === id);
+const squadOf = e => (S.data.sources || []).findIndex(x => x.name === e.info[0]);
+function selection(){
+  const {ids, lo, hi} = dragRect(), emps = ids.map(empById).filter(Boolean), cells = [];
+  let locked = 0, reds = 0;
+  const bulk = emps.length * (hi - lo + 1) > 1;   // a drag over several cells: forced days off (red N) are skipped
+  for(const e of emps) for(let i = lo; i <= hi; i++){
+    const why = lockReason(e, i, bulk);
+    if(why){ locked++; if(bulk && !lockReason(e, i)) reds++; } else cells.push({e, i});
+  }
+  return {emps, lo, hi, cells, locked, reds};
+}
+function openEditor(){
+  const {emps, lo, hi, cells, locked, reds} = selection();
+  if(!cells.length){ closeEd(); return; }
+  const dt = i => { const [, m, d] = S.data.dates[i].split('-'); return +d + '/' + +m; };
+  const range = lo === hi ? dt(lo) : `${dt(lo)} – ${dt(hi)}`, nd = hi - lo + 1;
+  const who = emps.length === 1 ? `${esc(emps[0].name)} <small>${esc(emps[0].id)}</small>` : `${emps.length} people`;
+  edpop.innerHTML = `<h4>${who}</h4><div class="sub">${emps.length === 1 ? esc(emps[0].info[0] || '') + ' · ' : ''}${range} (${nd} day${nd > 1 ? 's' : ''}${emps.length > 1 ? `, ${cells.length} cells` : ''})</div>` +
+    (locked ? `<div class="sub warn">${locked} locked cell(s) in this selection are skipped${reds ? ` (${reds} forced day(s) off: click one on its own to change it)` : ''}.</div>` : '') +
+    '<input class="code" id="edCode" list="codes" maxlength="40" placeholder="Aircraft code, or N for a day off" autocomplete="off">' +
+    '<div class="sub warn" id="edErr"></div>' +
+    '<div class="row"><button class="btn sm primary" data-ed="code">Set code</button><button class="btn sm" data-ed="forced" title="Writes a red N: a day off the person was guaranteed">Forced day off</button>' +
+    '<button class="btn sm" data-ed="clear">Clear</button><button class="btn sm" data-ed="cancel">Cancel</button></div>' +
+    `<div class="row"><button class="btn sm" data-ed="copy" title="Ctrl+C with the code box empty">Copy</button><button class="btn sm" data-ed="paste" ${S.clip ? '' : 'disabled'} title="Ctrl+V with the code box empty; pastes from the top-left of the selection, repeated if the selection is bigger">Paste</button></div>`;
+  edpop.hidden = false;
+  const r = drag.td.getBoundingClientRect(), pw = edpop.offsetWidth, ph = edpop.offsetHeight;
+  edpop.style.left = Math.max(8, Math.min(r.left, innerWidth - pw - 8)) + 'px';
+  edpop.style.top = (r.bottom + 6 + ph > innerHeight ? Math.max(8, r.top - ph - 6) : r.bottom + 6) + 'px';
+  $('edCode').focus();
+}
+edpop.addEventListener('click', ev => { const b = ev.target.closest('[data-ed]'); if(b && !b.disabled) applyEdit(b.dataset.ed); });
+edpop.addEventListener('keydown', ev => { if(ev.key === 'Enter' && ev.target.id === 'edCode'){ ev.preventDefault(); applyEdit('code'); } });
+
+// put one cell's new text into the staged edits (same shape the server expects)
+function stageCell(e, sq, i, text, forced){
+  const date = S.data.dates[i], key = e.id + '|' + date, old = String(e.cells[i] || '').trim(), oldRed = liveIsRed(e, i);
+  const kind = text === 'N' ? (forced ? 'forced' : 'n') : text === '' ? 'clear' : 'code';
+  // back to what the sheet already has: same text, and for an N also the same colour
+  if(text === old && (text !== 'N' || (kind === 'forced') === oldRed)) delete S.staged[key];
+  else S.staged[key] = {squad: sq, id: e.id, name: e.name, date, old, old_red: oldRed, kind, value: kind === 'code' ? text : '', text, state: 'ok'};
+}
+const pasteable = t => t === '' || t.toUpperCase() === 'N' || (t.length <= 40 && !/^H /i.test(t));
+function applyEdit(kind){
+  if(kind === 'cancel'){ closeEd(); return; }
+  if(kind === 'copy'){ copySel(); return; }
+  if(kind === 'paste'){ pasteSel(); return; }
+  let value = '';
+  if(kind === 'code'){
+    value = $('edCode').value.replace(/\s+/g, ' ').trim();
+    const err = !value ? 'Type a code first.' : value.length > 40 ? 'The code is too long.'
+              : /^H /i.test(value) ? 'Course markers (H …) come from KHDT only.' : '';
+    if(err){ $('edErr').textContent = err; return; }
+  }
+  const {cells} = selection();
+  for(const {e} of cells) if(squadOf(e) < 0){ $('edErr').textContent = `Can’t tell which squad ${e.name} belongs to.`; return; }
+  // typing N is a normal (black) day off; the button is the forced (red) one
+  const text = kind === 'n' || kind === 'forced' || value.toUpperCase() === 'N' ? 'N' : kind === 'clear' ? '' : value;
+  for(const {e, i} of cells) stageCell(e, squadOf(e), i, text, kind === 'forced');
+  closeEd(); render();
+}
+function copySel(){
+  const {emps, lo, hi} = selection();
+  const grid = f => emps.map(e => { const row = []; for(let i = lo; i <= hi; i++) row.push(f(e, i)); return row; });
+  // red[y][x] = the copied cell is a red N (a forced day off): pasting keeps the colour
+  S.clip = {h: emps.length, w: hi - lo + 1, cells: grid((e, i) => lockReason(e, i) ? null : effText(e, i)), red: grid((e, i) => !lockReason(e, i) && effRed(e, i))};
+  try{ navigator.clipboard && navigator.clipboard.writeText(S.clip.cells.map(r => r.map(t => t == null ? '' : t).join('\t')).join('\n')); }catch(_){}
+  S.editNote = `Copied ${emps.length} person(s) × ${hi - lo + 1} day(s). Select the target (top-left cell) and Paste.`;
+  closeEd(); renderEditBar();
+}
+function pasteSel(){
+  if(!S.clip){ return; }
+  const ids = rowIds(), {ids: sel, lo, hi} = dragRect();
+  const r0 = ids.indexOf(sel[0]), tall = sel.length > S.clip.h, wide = hi - lo + 1 > S.clip.w;
+  const rows = tall ? sel.length : S.clip.h, cols = wide ? hi - lo + 1 : S.clip.w;   // a bigger selection repeats the copied block
+  let done = 0, locked = 0, bad = 0, cut = 0;
+  const bulk = rows * cols > 1;   // pasting several cells never overwrites a forced day off (red N)
+  for(let y = 0; y < rows; y++){
+    const e = empById(ids[r0 + y]); if(!e){ cut++; continue; }
+    const sq = squadOf(e); if(sq < 0){ bad++; continue; }
+    for(let x = 0; x < cols; x++){
+      const i = lo + x; if(i >= S.data.dates.length){ cut++; continue; }
+      const t = S.clip.cells[y % S.clip.h][x % S.clip.w];
+      if(t == null || !pasteable(t)){ bad++; continue; }
+      if(lockReason(e, i, bulk)){ locked++; continue; }
+      const isN = t.toUpperCase() === 'N';
+      stageCell(e, sq, i, isN ? 'N' : t, isN && !!S.clip.red[y % S.clip.h][x % S.clip.w]); done++;
+    }
+  }
+  S.editNote = `Pasted ${done} cell(s)` + (locked ? `, ${locked} locked skipped` : '') + (bad ? `, ${bad} not pasteable (locked source or unknown squad)` : '') + (cut ? `, ${cut} fell outside the table` : '') + '.';
+  closeEd(); render();
+}
+
+async function saveEdits(){
+  const items = stagedAll().filter(s => s.state === 'ok');
+  if(!items.length) return;
+  if(!(window.AUTH && AUTH.user)){ alert('Log in first.'); return; }
+  if(!confirm(`Write ${items.length} change(s) into the squads' Google Sheets?`)) return;
+  const body = $('saveBody');
+  body.innerHTML = '<p>Saving…</p>';
+  if(!$('saveDlg').open) $('saveDlg').showModal();
+  try{
+    const intents = items.map(({state, text, ...x}) => ({origin:'roster', ...x}));
+    const r = await fetch('/api/link/save', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({intents}) });
+    const j = await r.json();
+    if(!j.ok) throw new Error(j.error || 'Save failed');
+    const lines = j.squads.map(s => {
+      if(!s.error) Object.entries(S.staged).forEach(([k, x]) => { if(x.squad === s.squad && x.state === 'ok') delete S.staged[k]; });
+      const mine = j.plans.filter(p => p.squad === s.squad);
+      const bad = mine.filter(p => p.status === 'blocked').map(p => `${p.name || p.id} ${fmtD(p.intent.date)} (${p.blocked})`);
+      const dayless = mine.filter(p => p.status === 'roster_only').map(p => `${p.name || p.id} ${fmtD(p.intent.date)} (${p.day_skipped})`);
+      const tabs = s.created_tabs && s.created_tabs.length ? ` New tab(s): ${esc(s.created_tabs.join(', '))}.` : '';
+      const sk = (bad.length ? `<div class="sub">Not saved ${bad.length}: ${esc(bad.slice(0, 5).join('; '))}${bad.length > 5 ? '…' : ''}</div>` : '')
+               + (dayless.length ? `<div class="sub">Roster saved but the day tab was not updated for ${dayless.length}: ${esc(dayless.slice(0, 5).join('; '))}${dayless.length > 5 ? '…' : ''}</div>` : '');
+      if(s.error) return `<div class="err">${esc(s.name)}: ${esc(s.error)}${s.partial ? ` (partly saved: roster ${s.roster_written}, day cells ${s.day_written}.${tabs})` : ''}</div>${sk}`;
+      return `<div class="okline">✔ ${esc(s.name)}: <b>${s.roster_written}</b> roster cell(s), <b>${s.day_written}</b> day-tab cell(s).${tabs}</div>${sk}`;
+    });
+    body.innerHTML = '<div class="exp-res">' + lines.join('') + '</div><div class="row"><button class="btn" id="saveDone" type="button">Close</button></div>';
+    $('saveDone').onclick = () => $('saveDlg').close();
+    await load(true);
+  }catch(e){
+    body.innerHTML = '<div class="err">' + esc(e.message) + '</div><div class="row"><button class="btn" id="saveDone" type="button">Close</button></div>';
+    $('saveDone').onclick = () => $('saveDlg').close();
+  }
 }
 
 /* ---------- Daily Distribution ---------- */
@@ -959,5 +1234,6 @@ window.addEventListener('storage', e => {
 revLoad();
 setView(location.hash === '#distribution' ? 'dist' : 'roster');
 </script>
+<script src="/static/auth.js" defer></script>
 </body>
 </html>

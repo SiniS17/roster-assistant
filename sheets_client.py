@@ -251,3 +251,57 @@ def write_roster_updates(spreadsheet_id, sheet_id, updates):
         service.spreadsheets().batchUpdate(
             spreadsheetId=spreadsheet_id, body={"requests": requests[i : i + CHUNK]}
         ).execute()
+
+
+class TabExists(Exception):
+    """add_sheet: the spreadsheet already has a tab of that name."""
+
+
+def _a1_cell(row, col):
+    letters, n = "", col + 1
+    while n:
+        n, rem = divmod(n - 1, 26)
+        letters = chr(65 + rem) + letters
+    return f"{letters}{row + 1}"
+
+
+def _q(title):
+    return "'" + title.replace("'", "''") + "'"
+
+
+def add_sheet(spreadsheet_id, title, header, rows=600):
+    """Create a new tab with a bold, frozen first row holding `header` (a list of texts). TabExists when the
+    spreadsheet already has a tab of that name (nothing is changed then). Returns the new tab's sheetId."""
+    from googleapiclient.errors import HttpError
+
+    service = get_service()
+    try:
+        res = service.spreadsheets().batchUpdate(spreadsheetId=spreadsheet_id, body={"requests": [{
+            "addSheet": {"properties": {"title": title, "gridProperties": {
+                "rowCount": rows, "columnCount": max(len(header), 5), "frozenRowCount": 1}}}}]}).execute()
+    except HttpError as e:
+        if "already exists" in str(e):
+            raise TabExists(title) from e
+        raise
+    sheet_id = res["replies"][0]["addSheet"]["properties"]["sheetId"]
+    service.spreadsheets().values().update(
+        spreadsheetId=spreadsheet_id, range=f"{_q(title)}!A1:{_a1_cell(0, len(header) - 1)}",
+        valueInputOption="RAW", body={"values": [list(header)]}).execute()
+    service.spreadsheets().batchUpdate(spreadsheetId=spreadsheet_id, body={"requests": [{
+        "repeatCell": {"range": {"sheetId": sheet_id, "startRowIndex": 0, "endRowIndex": 1},
+                       "cell": {"userEnteredFormat": {"textFormat": {"bold": True}}},
+                       "fields": "userEnteredFormat.textFormat.bold"}}]}).execute()
+    return sheet_id
+
+
+def write_cells(spreadsheet_id, title, cells):
+    """cells: [{"row", "col", "value"}] (0-indexed) written as plain text into tab `title`; '' empties a cell.
+    Only those cells are touched (formatting is left alone)."""
+    if not cells:
+        return
+    service = get_service()
+    data = [{"range": f"{_q(title)}!{_a1_cell(c['row'], c['col'])}", "values": [[str(c["value"])]]} for c in cells]
+    CHUNK = 500
+    for i in range(0, len(data), CHUNK):
+        service.spreadsheets().values().batchUpdate(
+            spreadsheetId=spreadsheet_id, body={"valueInputOption": "RAW", "data": data[i:i + CHUNK]}).execute()

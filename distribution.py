@@ -38,6 +38,7 @@ from config import (
     DISTRIBUTION_ROLE_MARKERS,
     DISTRIBUTION_SHEET_NAMES,
     DISTRIBUTION_SHEET_URLS,
+    LINK_UNASSIGNED_TITLE,
 )
 from engine import find_roster_header_grid, normalize_id, parse_sheet_date
 from sheets_client import make_drive_service, make_readonly_service, parse_sheet_url
@@ -618,6 +619,11 @@ def _is_person_row(row, cols):
 
 def parse_day(values, colors, phones=None):
     phones = phones or {}
+    import daily_db  # here, not at the top: daily_db imports this module
+
+    db = daily_db.read_grid(values)  # the flat tab the edit functions create (Name | VAEID | Function | Zone | remark)
+    if db is not None:
+        return daily_db.to_sections(db["records"], phones, LINK_UNASSIGNED_TITLE)
     headers = _find_headers(values)
     if not headers:
         raise ValueError("Couldn't find a header row with ID and NAME columns in this tab.")
