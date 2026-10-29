@@ -182,7 +182,8 @@ def test_a_hand_made_tab_with_the_same_name_is_left_alone():
 def test_other_codes_are_not_linked_and_locked_cells_still_block():
     ctx, _ = ctx_with({"A864-OCT02": db_tab()})
     assert a.plan_link(ctx, intent(id="VAE05555", kind="code", value="A864-FM"))["day"] == []
-    blocked = a.plan_link(ctx, intent(id="VAE02379", kind="code", value="A864-34", date="2026-10-03"))
+    with ta.red_n_locked():
+        blocked = a.plan_link(ctx, intent(id="VAE02379", kind="code", value="A864-34", date="2026-10-03"))
     assert blocked["status"] == "blocked" and "red N" in blocked["blocked"]
 
 
@@ -212,7 +213,7 @@ def test_daily_edit_of_a_hand_made_tab_is_refused_in_database_mode():
 # ----------------------------------------------------------------- commit
 class Recorder:
     def __init__(self, fail_day=False):
-        self.calls, self.fail_day = [], fail_day
+        self.calls, self.fail_day, self.roster = [], fail_day, []
 
     def install(self, ctx):
         src = SimpleNamespace(id="SHEET1", kind="sheets")
@@ -220,7 +221,7 @@ class Recorder:
         self.real = (a.load_context, a.sheets_client.write_roster_updates, a.sheets_client.add_sheet,
                      a.sheets_client.write_cells, khdt_review._tab_gid, auth.can_edit)
         a.load_context = lambda index, force=True: ctx
-        a.sheets_client.write_roster_updates = lambda sid, gid, ups: self.calls.append(("roster", sid, gid, len(ups)))
+        a.sheets_client.write_roster_updates = lambda sid, gid, ups: (self.calls.append(("roster", sid, gid, len(ups))), self.roster.append(list(ups)))
         a.sheets_client.add_sheet = lambda sid, title, header: self.calls.append(("add_sheet", sid, title, tuple(header)))
         a.sheets_client.write_cells = self._cells
         khdt_review._tab_gid = lambda sid, title: 7
@@ -270,10 +271,21 @@ def test_commit_skips_blocked_intents_and_writes_nothing_for_them():
     ctx, _ = ctx_with()
     rec = Recorder().install(ctx)
     try:
-        res = a.commit([intent(id="VAE02379", kind="code", value="A864-34", date="2026-10-03")], "tester")
+        res = a.commit([intent(id="VAE00708", kind="code", value="A864-34", date="2026-10-01")], "tester")  # course marker
     finally:
         rec.restore()
     assert rec.calls == [] and res["plans"][0]["status"] == "blocked" and res["squads"][0]["error"] is None
+
+
+def test_commit_writes_a_forced_day_off_in_red():
+    ctx, _ = ctx_with()
+    rec = Recorder().install(ctx)
+    try:
+        res = a.commit([intent(id="VAE05555", kind="forced"), intent(id="VAE07777", kind="n")], "tester")
+    finally:
+        rec.restore()
+    assert res["squads"][0]["error"] is None
+    assert sorted((u["value"], u["color"]) for u in rec.roster[0]) == [("N", "000000"), ("N", "FF0000")]
 
 
 def test_commit_refuses_the_hand_made_layout_and_an_uploaded_xlsx():

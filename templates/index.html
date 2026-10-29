@@ -347,6 +347,7 @@ const WD = ['SUN','MON','TUE','WED','THU','FRI','SAT'];
 const MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
+const RED_N_EDITABLE = {{ 'true' if red_n_editable else 'false' }};   // server: config.ROSTER_RED_N_EDITABLE
 const S = { data:null, zoom:1, updated:new Set(), team:'', view:'roster', onlyChanged:false, edit:false, staged:{} };
 
 /* ---------- theme ---------- */
@@ -435,7 +436,7 @@ function revCounts(){
 // What a roster cell shows: the live value, or - while a KHDT change is under review - the proposed one.
 function eff(e, i){
   const sg = S.staged[e.id + '|' + S.data.dates[i]];
-  if(sg && sg.state === 'ok') return {v:sg.text, color:null, c:null, st:'staged', sg};
+  if(sg && sg.state === 'ok') return {v:sg.text, color:sg.kind === 'forced' ? 'FF0000' : null, c:null, st:'staged', sg};
   const c = REV && REV.changes[e.id + '|' + S.data.dates[i]];
   if(c && c.state === 'ok'){
     if(c.status === 'rejected') return {v:e.cells[i], color:e.colors[i], c, st:'rejected'};
@@ -738,7 +739,7 @@ function setView(v){
 }
 
 /* ---------- roster editing: pick cells, stage edits, save them to the squads' sheets ---------- */
-// S.staged = { 'ID|YYYY-MM-DD': {squad, id, name, date, old, kind:'code'|'n'|'clear', value, text, state:'ok'|'stale'|'missing'} }
+// S.staged = { 'ID|YYYY-MM-DD': {squad, id, name, date, old, kind:'code'|'n'|'forced'|'clear', value, text, old_red, state:'ok'|'stale'|'missing'} }   // forced = red N
 // Staged edits live in this page only until Save; the server re-checks every one against the live sheet (roster_edit.py).
 const canEdit = () => !!(window.AUTH && AUTH.canEdit);
 const stagedAll = () => Object.values(S.staged);
@@ -753,20 +754,22 @@ function updateEditBtn(){
 function lockReason(e, i){
   const v = String(e.cells[i] || '').trim();
   if(/^H /i.test(v)) return 'a KHDT course marker';
-  if(v.toUpperCase() === 'N' && isRed(e.colors[i])) return 'a guaranteed day off (red N)';
+  if(!RED_N_EDITABLE && v.toUpperCase() === 'N' && isRed(e.colors[i])) return 'a guaranteed day off (red N)';
   const c = REV && REV.changes[e.id + '|' + S.data.dates[i]];
   if(c && c.state === 'ok' && c.status !== 'rejected') return 'a KHDT change is waiting here - keep or reject it first';
   return '';
 }
+const liveIsRed = (e, i) => String(e.cells[i] || '').trim().toUpperCase() === 'N' && !!isRed(e.colors[i]);
 function reconcileStaged(){
   const d = S.data; if(!d || d.view !== 'squads') return;
   const emp = new Map(d.employees.map(e => [e.id, e])), di = new Map(d.dates.map((x, i) => [x, i]));
   for(const [k, s] of Object.entries(S.staged)){
     const e = emp.get(s.id), i = di.get(s.date);
     if(!e || i === undefined){ s.state = 'missing'; continue; }
-    const live = String(e.cells[i] || '').trim();
-    if(live === s.text) delete S.staged[k];       // the sheet already says this (e.g. just saved)
-    else s.state = live === s.old ? 'ok' : 'stale'; // somebody changed the cell meanwhile: not saved
+    const live = String(e.cells[i] || '').trim(), liveRed = liveIsRed(e, i);
+    // text AND colour: a black N and a red N are different cells
+    if(live === s.text && (s.text !== 'N' || (s.kind === 'forced') === liveRed)) delete S.staged[k];  // the sheet already says this (e.g. just saved)
+    else s.state = live === s.old && (s.old !== 'N' || !!s.old_red === liveRed) ? 'ok' : 'stale';     // somebody changed the cell meanwhile: not saved
   }
 }
 function renderEditBar(){
@@ -779,7 +782,7 @@ function renderEditBar(){
   $('codes').innerHTML = [...codes].sort().map(c => `<option value="${esc(c)}">`).join('');
   bar.innerHTML = `<span><b>${S.edit ? 'Edit mode' : 'Staged edits'}</b>: <b>${ok}</b> change(s) staged, not saved yet</span>` +
     (bad ? `<span title="The cell was edited in the sheet after you staged it, so the edit is ignored.">${bad} out of date</span>` : '') +
-    (S.edit ? '<small>Click a cell, or drag over several people and days, then set a code, or Copy and Paste onto others. Red N and H course markers are locked.</small>' : '') +
+    (S.edit ? '<small>Click a cell, or drag over several people and days, then set a code, or Copy and Paste onto others. Type N for a normal day off; “Forced day off” writes a red N. H course markers are locked.</small>' : '') +
     (S.editNote ? `<span>${esc(S.editNote)}</span>` : '') +
     '<span class="grow"></span>' +
     `<button class="btn sm primary" data-ed2="save" ${ok && window.AUTH && AUTH.user ? '' : 'disabled'}>Save ${ok} to sheets</button>` +
@@ -844,6 +847,7 @@ document.addEventListener('keydown', ev => {
   ev.preventDefault(); if(k === 'c') copySel(); else pasteSel();
 });
 
+const effRed = (e, i) => { const sg = S.staged[e.id + '|' + S.data.dates[i]]; return sg ? sg.kind === 'forced' : liveIsRed(e, i); };
 const effText = (e, i) => { const sg = S.staged[e.id + '|' + S.data.dates[i]]; return sg ? sg.text : String(e.cells[i] || '').trim(); };
 const empById = id => S.data.employees.find(x => x.id === id);
 const squadOf = e => (S.data.sources || []).findIndex(x => x.name === e.info[0]);
@@ -861,9 +865,9 @@ function openEditor(){
   const who = emps.length === 1 ? `${esc(emps[0].name)} <small>${esc(emps[0].id)}</small>` : `${emps.length} people`;
   edpop.innerHTML = `<h4>${who}</h4><div class="sub">${emps.length === 1 ? esc(emps[0].info[0] || '') + ' · ' : ''}${range} (${nd} day${nd > 1 ? 's' : ''}${emps.length > 1 ? `, ${cells.length} cells` : ''})</div>` +
     (locked ? `<div class="sub warn">${locked} locked cell(s) in this selection are skipped.</div>` : '') +
-    '<input class="code" id="edCode" list="codes" maxlength="40" placeholder="Aircraft code, e.g. A864-FM" autocomplete="off">' +
+    '<input class="code" id="edCode" list="codes" maxlength="40" placeholder="Aircraft code, or N for a day off" autocomplete="off">' +
     '<div class="sub warn" id="edErr"></div>' +
-    '<div class="row"><button class="btn sm primary" data-ed="code">Set code</button><button class="btn sm" data-ed="n">Normal N</button>' +
+    '<div class="row"><button class="btn sm primary" data-ed="code">Set code</button><button class="btn sm" data-ed="forced" title="Writes a red N: a day off the person was guaranteed">Forced day off</button>' +
     '<button class="btn sm" data-ed="clear">Clear</button><button class="btn sm" data-ed="cancel">Cancel</button></div>' +
     `<div class="row"><button class="btn sm" data-ed="copy" title="Ctrl+C with the code box empty">Copy</button><button class="btn sm" data-ed="paste" ${S.clip ? '' : 'disabled'} title="Ctrl+V with the code box empty; pastes from the top-left of the selection, repeated if the selection is bigger">Paste</button></div>`;
   edpop.hidden = false;
@@ -876,11 +880,12 @@ edpop.addEventListener('click', ev => { const b = ev.target.closest('[data-ed]')
 edpop.addEventListener('keydown', ev => { if(ev.key === 'Enter' && ev.target.id === 'edCode'){ ev.preventDefault(); applyEdit('code'); } });
 
 // put one cell's new text into the staged edits (same shape the server expects)
-function stageCell(e, sq, i, text){
-  const date = S.data.dates[i], key = e.id + '|' + date, old = String(e.cells[i] || '').trim();
-  const kind = text === 'N' ? 'n' : text === '' ? 'clear' : 'code';
-  if(text === old) delete S.staged[key];   // back to what the sheet already has
-  else S.staged[key] = {squad: sq, id: e.id, name: e.name, date, old, kind, value: kind === 'code' ? text : '', text, state: 'ok'};
+function stageCell(e, sq, i, text, forced){
+  const date = S.data.dates[i], key = e.id + '|' + date, old = String(e.cells[i] || '').trim(), oldRed = liveIsRed(e, i);
+  const kind = text === 'N' ? (forced ? 'forced' : 'n') : text === '' ? 'clear' : 'code';
+  // back to what the sheet already has: same text, and for an N also the same colour
+  if(text === old && (text !== 'N' || (kind === 'forced') === oldRed)) delete S.staged[key];
+  else S.staged[key] = {squad: sq, id: e.id, name: e.name, date, old, old_red: oldRed, kind, value: kind === 'code' ? text : '', text, state: 'ok'};
 }
 const pasteable = t => t === '' || t.toUpperCase() === 'N' || (t.length <= 40 && !/^H /i.test(t));
 function applyEdit(kind){
@@ -890,19 +895,22 @@ function applyEdit(kind){
   let value = '';
   if(kind === 'code'){
     value = $('edCode').value.replace(/\s+/g, ' ').trim();
-    const err = !value ? 'Type a code first.' : value.length > 40 ? 'The code is too long.' : value.toUpperCase() === 'N' ? 'Use “Normal N” for a day off.'
+    const err = !value ? 'Type a code first.' : value.length > 40 ? 'The code is too long.'
               : /^H /i.test(value) ? 'Course markers (H …) come from KHDT only.' : '';
     if(err){ $('edErr').textContent = err; return; }
   }
   const {cells} = selection();
   for(const {e} of cells) if(squadOf(e) < 0){ $('edErr').textContent = `Can’t tell which squad ${e.name} belongs to.`; return; }
-  const text = kind === 'n' ? 'N' : kind === 'clear' ? '' : value;
-  for(const {e, i} of cells) stageCell(e, squadOf(e), i, text);
+  // typing N is a normal (black) day off; the button is the forced (red) one
+  const text = kind === 'n' || kind === 'forced' || value.toUpperCase() === 'N' ? 'N' : kind === 'clear' ? '' : value;
+  for(const {e, i} of cells) stageCell(e, squadOf(e), i, text, kind === 'forced');
   closeEd(); render();
 }
 function copySel(){
   const {emps, lo, hi} = selection();
-  S.clip = {h: emps.length, w: hi - lo + 1, cells: emps.map(e => { const row = []; for(let i = lo; i <= hi; i++) row.push(lockReason(e, i) ? null : effText(e, i)); return row; })};
+  const grid = f => emps.map(e => { const row = []; for(let i = lo; i <= hi; i++) row.push(f(e, i)); return row; });
+  // red[y][x] = the copied cell is a red N (a forced day off): pasting keeps the colour
+  S.clip = {h: emps.length, w: hi - lo + 1, cells: grid((e, i) => lockReason(e, i) ? null : effText(e, i)), red: grid((e, i) => !lockReason(e, i) && effRed(e, i))};
   try{ navigator.clipboard && navigator.clipboard.writeText(S.clip.cells.map(r => r.map(t => t == null ? '' : t).join('\t')).join('\n')); }catch(_){}
   S.editNote = `Copied ${emps.length} person(s) × ${hi - lo + 1} day(s). Select the target (top-left cell) and Paste.`;
   closeEd(); renderEditBar();
@@ -921,7 +929,8 @@ function pasteSel(){
       const t = S.clip.cells[y % S.clip.h][x % S.clip.w];
       if(t == null || !pasteable(t)){ bad++; continue; }
       if(lockReason(e, i)){ locked++; continue; }
-      stageCell(e, sq, i, t.toUpperCase() === 'N' ? 'N' : t); done++;
+      const isN = t.toUpperCase() === 'N';
+      stageCell(e, sq, i, isN ? 'N' : t, isN && !!S.clip.red[y % S.clip.h][x % S.clip.w]); done++;
     }
   }
   S.editNote = `Pasted ${done} cell(s)` + (locked ? `, ${locked} locked skipped` : '') + (bad ? `, ${bad} not pasteable (locked source or unknown squad)` : '') + (cut ? `, ${cut} fell outside the table` : '') + '.';

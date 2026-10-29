@@ -6,6 +6,7 @@ Reuses the mock squads of test_squad_roster.py / test_khdt_review.py with a fake
 writer: no credentials or network needed.
 """
 
+import contextlib
 import copy
 import os
 import sys
@@ -37,6 +38,17 @@ def setup():
     return sources, written
 
 
+@contextlib.contextmanager
+def red_n_locked(on=True):
+    """config.ROSTER_RED_N_EDITABLE switched off (red N locked again) for the block."""
+    old = roster_edit.ROSTER_RED_N_EDITABLE
+    roster_edit.ROSTER_RED_N_EDITABLE = not on
+    try:
+        yield
+    finally:
+        roster_edit.ROSTER_RED_N_EDITABLE = old
+
+
 def edit(eid, date, kind="code", value="", old="", squad=3, name=None):
     return {"squad": squad, "id": eid, "name": name or eid, "date": date, "old": old, "kind": kind, "value": value}
 
@@ -63,14 +75,22 @@ def test_writes_a_code_a_normal_n_and_a_clear_in_black():
 
 def test_locked_cells_are_never_overwritten():
     _, written = setup()
-    res = roster_edit.save([
-        edit("VAE07778", "2026-10-01", "code", "A611", old="H ATHK"),               # a KHDT course marker
-        edit("VAE02012", "2026-10-04", "code", "A611", old="N", squad=2),           # a red N
-        edit("VAE07778", "2026-10-01", "clear", old="H ATHK"),
-    ], "tester")
+    with red_n_locked():  # the old behaviour, still available through config.ROSTER_RED_N_EDITABLE = False
+        res = roster_edit.save([
+            edit("VAE07778", "2026-10-01", "code", "A611", old="H ATHK"),               # a KHDT course marker
+            edit("VAE02012", "2026-10-04", "code", "A611", old="N", squad=2),           # a red N
+            edit("VAE07778", "2026-10-01", "clear", old="H ATHK"),
+        ], "tester")
     why = {k: v for r in res["squads"] for k, v in skipped({"squads": [r]}).items()}
     assert "locked" in why[("VAE07778", "2026-10-01")] and "locked" in why[("VAE02012", "2026-10-04")]
     assert written == [] and all(s["written"] == 0 for s in res["squads"])
+
+
+def test_course_markers_stay_locked_even_when_red_n_is_editable():
+    _, written = setup()
+    res = roster_edit.save([edit("VAE07778", "2026-10-01", "forced", old="H ATHK"),
+                            edit("VAE07778", "2026-10-01", "n", old="H ATHK")], "t")
+    assert written == [] and "locked" in skipped(res)[("VAE07778", "2026-10-01")]
 
 
 def test_stale_cells_are_skipped():
@@ -96,13 +116,50 @@ def test_moved_employee_or_unknown_date_is_skipped():
 
 def test_values_that_are_not_allowed():
     _, written = setup()
-    bad = {"": "empty", "N": "Normal N", "n": "Normal N", "H ATHK": "KHDT only", "x" * 41: "longer than"}
+    bad = {"": "empty", "H ATHK": "KHDT only", "x" * 41: "longer than"}
     cells = [("VAE07777", "2026-10-01"), ("VAE07777", "2026-10-02"), ("VAE07777", "2026-10-03"),
-             ("VAE07777", "2026-10-04"), ("VAE07778", "2026-10-02")]  # one cell each: the last edit of a cell wins
+             ("VAE07777", "2026-10-04"), ("VAE07778", "2026-10-02")][:3]  # one cell each: the last edit of a cell wins
     res = roster_edit.save([edit(i, d, "code", v) for (i, d), v in zip(cells, bad)], "t")
     assert written == [] and len(res["squads"][0]["skipped"]) == len(bad)
     reasons = " | ".join(s["reason"] for s in res["squads"][0]["skipped"])
     assert all(word in reasons for word in bad.values())
+
+
+def test_typed_n_is_a_normal_black_day_off():
+    _, written = setup()
+    res = roster_edit.save([edit("VAE07777", "2026-10-01", "code", " n "), edit("VAE07777", "2026-10-02", "code", "N")], "t")
+    assert res["squads"][0]["written"] == 2
+    assert [(u["value"], u["color"]) for u in sorted(written[0][2], key=lambda u: u["col"])] == [("N", "000000")] * 2
+
+
+def test_forced_day_off_writes_a_red_n_and_black_red_changes_are_real_changes():
+    _, written = setup()
+    res = roster_edit.save([
+        edit("VAE07777", "2026-10-01", "forced"),                          # empty cell -> red N
+        edit("VAE07778", "2026-10-03", "forced", old="N", name="x"),       # black N -> red N: same text, new colour
+        edit("VAE02012", "2026-10-04", "forced", old="N", squad=2),        # already red: no change
+        edit("VAE02012", "2026-10-04", "n", old="N", squad=2),             # red N -> black N (red N is editable)
+        edit("VAE02012", "2026-10-04", "code", "A611", old="N", squad=2),  # last edit of that cell wins: red N -> code
+    ], "t")
+    assert [r["written"] for r in res["squads"]] == [1, 2] and all(not r["skipped"] for r in res["squads"])  # squad 2, squad 4
+    assert [(u["value"], u["color"]) for u in written[0][2]] == [("A611", "000000")]
+    assert sorted((u["row"], u["col"], u["value"], u["color"]) for u in written[1][2]) == [
+        (2, 3, "N", "FF0000"), (3, 5, "N", "FF0000")]
+    # exactly the same cell, same colour: nothing to write
+    _, written = setup()
+    res = roster_edit.save([edit("VAE02012", "2026-10-04", "forced", old="N", squad=2)], "t")
+    assert "no change" in skipped(res)[("VAE02012", "2026-10-04")] and written == []
+    res = roster_edit.save([edit("VAE07778", "2026-10-03", "n", old="N")], "t")
+    assert "no change" in skipped(res)[("VAE07778", "2026-10-03")] and written == []
+
+
+def test_old_red_detects_a_colour_change_made_meanwhile():
+    _, written = setup()
+    # the page saw a black N, but the sheet now has a red N (somebody forced it in the meantime)
+    res = roster_edit.save([dict(edit("VAE02012", "2026-10-04", "code", "A611", old="N", squad=2), old_red=False)], "t")
+    assert "changed since" in skipped(res)[("VAE02012", "2026-10-04")] and written == []
+    res = roster_edit.save([dict(edit("VAE02012", "2026-10-04", "code", "A611", old="N", squad=2), old_red=True)], "t")
+    assert res["squads"][0]["written"] == 1
 
 
 def test_no_change_is_not_written_and_the_last_edit_of_a_cell_wins():

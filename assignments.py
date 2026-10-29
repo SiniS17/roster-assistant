@@ -8,7 +8,7 @@ no function that writes to Google. Phases 4/5 will add the writing behind the sa
 Two kinds of intent go in:
 
   {"origin": "roster", "squad": 0, "id": "VAE02591", "date": "2026-10-06",
-   "kind": "code" | "n" | "clear", "value": "A864-34", "old": "<cell text the page saw, optional>"}
+   "kind": "code" | "n" | "forced" | "clear", "value": "A864-34", "old": "<cell text the page saw, optional>"}
       a roster cell is edited (same shape as roster_edit.save()); the day tab follows.
 
   {"origin": "daily", "squad": 0, "id": "VAE02591", "date": "2026-10-06", "tab": "6",
@@ -323,7 +323,8 @@ def load_context(index, force=True):
 # ------------------------------------------------------------------ building writes
 def _roster_write(ctx, update, old):
     return {"sheet": "roster", "tab": ctx["sq"]["title"], "row": update["row"], "col": update["col"],
-            "a1": a1(update["row"], update["col"]), "old": old, "new": update["value"]}
+            "a1": a1(update["row"], update["col"]), "old": old, "new": update["value"],
+            "color": update.get("color") or BLACK}
 
 
 def _day_write(tab, r, c, old, new):
@@ -619,7 +620,7 @@ def _apply(ctx, plan):
     sq = ctx["sq"]
     for w in plan["roster"]:
         _set(sq["values"], w["row"], w["col"], w["new"])
-        _set(sq["colors"], w["row"], w["col"], None)
+        _set(sq["colors"], w["row"], w["col"], None if w.get("color", BLACK) == BLACK else w["color"])
     for t in plan["create_tabs"]:  # later intents of the batch see the new tab (header row only)
         if _real_tab(ctx, t["tab"]) is None:
             ctx["_grids"][t["tab"]] = daily_db.new_tab_rows()
@@ -728,7 +729,7 @@ def _squad_writes(plans):
         if p is None or p["status"] in ("blocked", "noop"):
             continue
         for w in p["roster"]:
-            roster[(w["row"], w["col"])] = {"row": w["row"], "col": w["col"], "value": w["new"], "color": BLACK}
+            roster[(w["row"], w["col"])] = {"row": w["row"], "col": w["col"], "value": w["new"], "color": w.get("color", BLACK)}
         for t in p.get("create_tabs", []):
             create.setdefault(t["tab"], t)
         for w in p["day"]:
@@ -817,7 +818,8 @@ def format_plans(plans):
         for t in p.get("create_tabs", []):
             lines.append(f"    new tab '{t['tab']}' with the header row {' | '.join(daily_db.HEADERS)}")
         for w in p["roster"]:
-            lines.append(f"    roster '{w['tab']}'!{w['a1']}: {w['old']!r} -> {w['new']!r}")
+            lines.append(f"    roster '{w['tab']}'!{w['a1']}: {w['old']!r} -> {w['new']!r}"
+                         + (" (red)" if w.get("color") == "FF0000" else ""))
         for w in p["day"]:
             lines.append(f"    day tab '{w['tab']}'!{w['a1']}: {w['old']!r} -> {w['new']!r}")
         for n in p["notes"]:

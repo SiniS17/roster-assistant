@@ -9,16 +9,18 @@ anything is written.
 
 An edit is {squad, id, name, date (YYYY-MM-DD), old, kind, value}:
   kind 'code'  - an aircraft code (free text such as 'A864-FM'), written in black
-  kind 'n'     - a normal day off: black 'N'
+  kind 'n'     - a normal day off: black 'N' (typing N as a code is the same thing)
+  kind 'forced'- a forced day off: RED 'N' (what KHDT calls a guaranteed day off)
   kind 'clear' - empty the cell
+  old_red      - optional: was the cell a red N when the page saw it (a black <-> red change keeps the text 'N')
 
 An edit is skipped (and reported, never forced) when
   - the employee is no longer on that squad's own rows, or the date column is not on the sheet,
   - the cell text is no longer what the page saw (somebody else changed it),
-  - the cell is LOCKED: a KHDT course marker ('H ...') or a red N (guaranteed day off) - KHDT owns those,
-  - the new value is not allowed (empty code, a course marker, a bare 'N' typed as a code, too long),
-  - it would change nothing.
-The editor can therefore never write a red N or an 'H ...' marker.
+  - the cell is LOCKED: a KHDT course marker ('H ...'), or a red N when config.ROSTER_RED_N_EDITABLE is off,
+  - the new value is not allowed (empty code, a course marker, too long),
+  - it would change nothing (text AND colour: black N -> red N is a change).
+The editor can write a red N (kind 'forced') but never an 'H ...' marker.
 
 Who may edit which squad is decided by auth.can_edit(user, squad): the seam for roles.
 """
@@ -30,7 +32,8 @@ from googleapiclient.errors import HttpError
 
 import auth
 import distribution as dist
-from engine import is_course_marker, is_red_n, normalize_id
+from config import ROSTER_RED_N_EDITABLE
+from engine import MARKER_FONT_COLOR, is_course_marker, is_red_n, normalize_id
 from khdt_review import _drop_caches, _load_squad, _tab_gid
 from roster_view import _text
 from sheets_client import write_roster_updates
@@ -39,14 +42,15 @@ log = logging.getLogger(__name__)
 
 MAX_EDITS = 3000
 MAX_CODE_LEN = 40
-KINDS = ("code", "n", "clear")
+KINDS = ("code", "n", "forced", "clear")
 BLACK = "000000"
+RED = MARKER_FONT_COLOR  # "FF0000"
 
 
 def new_value(edit):
     """The text an edit would write; ValueError (with a readable reason) when it isn't allowed."""
     kind = edit.get("kind")
-    if kind == "n":
+    if kind in ("n", "forced"):
         return "N"
     if kind == "clear":
         return ""
@@ -58,10 +62,15 @@ def new_value(edit):
     if len(v) > MAX_CODE_LEN:
         raise ValueError(f"the code is longer than {MAX_CODE_LEN} characters")
     if v.upper() == "N":
-        raise ValueError("use 'Normal N' for a day off")
+        return "N"  # typing N is a normal day off
     if is_course_marker(v):
         raise ValueError("course markers ('H ...') come from KHDT only")
     return v
+
+
+def new_color(edit, value):
+    """Font colour an edit writes: red only for a forced day off, black for everything else."""
+    return RED if value == "N" and edit.get("kind") == "forced" else BLACK
 
 
 def _row_of(sq, emp_id):
@@ -88,15 +97,20 @@ def check(sq, col_of_date, edit):
         return None, f"the cell changed since you opened it (now '{live}')"
     if is_course_marker(live):
         return None, "locked: a KHDT course marker"
-    if is_red_n(live, color):
+    live_red = is_red_n(live, color)
+    if live_red and not ROSTER_RED_N_EDITABLE:
         return None, "locked: guaranteed day off (red N)"
+    old_red = edit.get("old_red")
+    if live == "N" and old_red is not None and bool(old_red) != live_red:
+        return None, f"the cell changed since you opened it (the N is now {'red' if live_red else 'black'})"
     try:
         value = new_value(edit)
     except ValueError as e:
         return None, str(e)
-    if value == live:
+    want = new_color(edit, value)
+    if value == live and (value != "N" or (want == RED) == live_red):
         return None, "no change"
-    return {"row": r, "col": col, "value": value, "color": BLACK}, None
+    return {"row": r, "col": col, "value": value, "color": want}, None
 
 
 def _save_squad(index, edits, user):

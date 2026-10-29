@@ -131,3 +131,8 @@ LOG_EVENT_LABELS = {
 }
 
 # bot email:khdt-roster-bot@khdt-roster.iam.gserviceaccount.com
+
+# Roster editor: may a user overwrite or clear a red N (a "forced day off")? The editor can now WRITE one
+# (button "Forced day off"), so by default it can also be changed back by hand. KHDT course markers ('H ...')
+# stay locked either way. False = red N is locked again (the old Phase 2 behaviour).
+ROSTER_RED_N_EDITABLE = True

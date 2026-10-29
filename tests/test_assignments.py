@@ -8,6 +8,7 @@ Squad 2 style ("aircraft": roster 'A611', tab 'A611-OCT02' with 'ZONE 128'). Not
 every test also proves that no writer is ever called.
 """
 
+import contextlib
 import os
 import sys
 import tempfile
@@ -105,6 +106,16 @@ def squad1(phones=None):
     tabs = {"1": day1(), "2": day1(), "3": day1()}
     days = [{"tab": t, "ac": "", "date": f"2026-10-{int(t):02d}"} for t in tabs]
     return ctx_for(0, make_sq(ROSTER1, COLORS1), tabs, days, phones), tabs
+
+
+@contextlib.contextmanager
+def red_n_locked():
+    """config.ROSTER_RED_N_EDITABLE off: a red N is locked against roster edits again."""
+    roster_edit.ROSTER_RED_N_EDITABLE = False
+    try:
+        yield
+    finally:
+        roster_edit.ROSTER_RED_N_EDITABLE = True
 
 
 def intent(origin="roster", **kw):
@@ -218,13 +229,29 @@ def test_locked_cells_block_everything():
     ctx, _ = squad1()
     for kw, word in ((dict(id="VAE00708", date="2026-10-01", kind="code", value="A864-34"), "course marker"),
                      (dict(id="VAE02379", date="2026-10-03", kind="code", value="A864-34"), "red N")):
-        p = a.plan_link(ctx, intent(**kw))
+        with red_n_locked():
+            p = a.plan_link(ctx, intent(**kw))
         assert p["status"] == "blocked" and word in p["blocked"] and p["roster"] == [] and p["day"] == []
+    # with the default (red N editable) only the course marker stays locked from the roster side
+    ctx2, _ = squad1()
+    assert a.plan_link(ctx2, intent(id="VAE00708", date="2026-10-01", kind="forced"))["status"] == "blocked"
+    assert a.plan_link(ctx2, intent(id="VAE02379", date="2026-10-03", kind="code", value="A864-34"))["status"] != "blocked"
     # moving somebody on a course (or on a guaranteed day off) into a zone from the daily side is blocked too
     p = a.plan_link(ctx, intent("daily", id="VAE00708", date="2026-10-01", tab="1", to="A864-34"))
     assert p["status"] == "blocked" and "course marker" in p["blocked"]
     p = a.plan_link(ctx, intent("daily", id="VAE02379", date="2026-10-03", tab="3", to="A864-34"))
     assert p["status"] == "blocked" and "red N" in p["blocked"]
+
+
+def test_forced_day_off_plans_a_red_n_and_takes_the_person_off_the_distribution():
+    ctx, _ = squad1()
+    p = a.plan_link(ctx, intent(id="VAE07777", kind="forced"))   # VAE07777 is listed on that day's tab
+    assert p["status"] == "ok" and p["blocked"] is None
+    assert [(w["new"], w["color"]) for w in p["roster"]] == [("N", "FF0000")]
+    assert p["day"] and all(w["new"] == "" for w in p["day"])      # same as a normal N: removed from the tab
+    assert "(red)" in "\n".join(a.format_plans([p]))
+    n = a.plan_link(ctx, intent(id="VAE05555", kind="n"))
+    assert [(w["new"], w["color"]) for w in n["roster"]] == [("N", "000000")]
 
 
 def test_stale_old_value_and_unknown_things_are_blocked_not_forced():
