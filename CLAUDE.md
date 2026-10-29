@@ -1,7 +1,7 @@
 # CLAUDE.md — roster-assistant handover
 
 Repo: https://github.com/SiniS17/roster-assistant.git (internal VAECO tool, Flask + Google Sheets)
-Last updated: 2026-10-29 (session 6: login, Phase 1 of the Login and Linked Editing Plan; branch feature/edit)
+Last updated: 2026-10-29 (session 7: roster editing, Phase 2 of the Login and Linked Editing Plan; branch feature/edit)
 
 ## Working agreement
 - Owner wants a CLAUDE.md (or equivalent handover) updated after every task.
@@ -18,7 +18,8 @@ Full plain-language behaviour (marker rules, N/red-N handling, date-swap bug): `
 | File | Role |
 |---|---|
 | `auth.py` | Login (`/api/login`, `/api/logout`, `/api/me`), `@login_required`, `can_edit` (role seam); accounts from `Database/users.xlsx` |
-| `app.py` | Flask routes: `/`, `/api/roster`, `POST /api/khdt/preview`, `POST /api/khdt/export`, `/api/distribution`, `/api/distribution/day`, old `POST /run` |
+| `roster_edit.py` | Hand edits of roster cells: re-reads the squad sheets fresh, checks every staged edit (same employee on the row, date column present, cell text unchanged, not locked, allowed value), then writes black cells; `POST /api/roster/save` (login required) |
+| `app.py` | Flask routes: `/`, `/api/roster`, `POST /api/roster/save`, `POST /api/khdt/preview`, `POST /api/khdt/export`, `/api/distribution`, `/api/distribution/day`, old `POST /run` |
 | `khdt_review.py` | KHDT -> proposed changes on the squads' 1st sheets (signed, nothing written) and the checked export into the real sheets |
 | `engine.py` | KHDT parsing + roster marking (`load_khdt`, `mark_roster_grid`, markers, date parsing) |
 | `sheets_client.py` | Service-account auth, read grid + font colours, batch write cells |
@@ -104,3 +105,11 @@ Full plain-language behaviour (marker rules, N/red-N handling, date-swap bug): `
 - Tests: `tests/test_auth.py` (12), `test_khdt_review.py` export-route test now logs in first, `browser_smoke.py` logs in through the context (smoke not re-run: Playwright not installed here). `pytest tests`: 35 pass.
 - Decision (owner): `Database/users.xlsx` stays tracked in git with its plain-text passwords; security is not a concern for this test phase and the login will be replaced later (hashed passwords + roles in Postgres, Step 8 of `docs/plan_for_sql.md`). Not done on purpose: hashing, roles, CSRF tokens (SameSite=Lax + JSON bodies), password change, Edit-mode toggle (Phase 2). Set a real `FLASK_SECRET_KEY` in production.
 - Next: Phase 2 (roster edit: staged edits, batch save, locks, stale checks, behind `can_edit`).
+
+## Session 7: roster editing, Phase 2 of "Login and Linked Editing Plan" (2026-10-29, branch `feature/edit`)
+- **Page** (`templates/index.html`): an **Edit mode** button appears next to reload only for a logged-in user (`AUTH.canEdit`, from `static/auth.js`). In edit mode every cell is its own box (no merged spans). Click a cell, or drag across the days of ONE person, release -> small editor: type an aircraft code (suggestions from codes already in use), **Normal N** (black), **Clear**. Edits are *staged* in the page (`S.staged`, blue outline, lost on reload; a `beforeunload` warning protects them), and the edit bar shows `Save N to sheets` / `Discard staged` / `Exit edit mode`. Locked cells (cursor not-allowed, no editor): an `H ...` course marker, a red `N`, or a cell with a KHDT change waiting for keep/reject. After each load `reconcileStaged()` drops staged edits the sheet already shows and marks edits whose cell changed meanwhile as out of date (not saved).
+- **Server** (`roster_edit.py`, `POST /api/roster/save`, `@login_required`): body `{edits:[{squad (index), id, name, date, old, kind: code|n|clear, value}]}`. Per squad: fresh read, then each edit is skipped and reported (never forced) when the employee is no longer on the squad's own rows, the date column isn't on the sheet, the cell text != `old`, the cell is locked (course marker / red N), the value isn't allowed (empty, > 40 chars, bare `N` typed as a code, `H ...`), or nothing would change. Written cells are always black; the editor cannot produce a red N or an `H ...` marker. `auth.can_edit(user, squad_index)` is checked per squad (seam for roles). At most 3000 edits per save; the last edit of one cell wins; caches are dropped after a save. The client sends only the squad index, id, date and old text: the server finds row/column itself.
+- Tests: `tests/test_roster_edit.py` (10 tests; with the rest `pytest tests` = 45 pass). The page was exercised in jsdom with the mock squads (login gating, locked cells, drag over 2 days, staging, no-op edits, save payload, result dialog, logout): **not in a real browser** (Chromium can't be downloaded in this environment), and not against the live sheets.
+- Dismissed on purpose: touch/mobile selection (mouse only), keyboard selection, editing `TĐ`/`PPC`/`FM` role codes (phase 1 leaves them out because day-tab labels override roster codes), persisting staged edits across reloads, merging into the KHDT review, undo (the sheet's version history is the way back), audit table (comes with Postgres, `roster_audit`).
+- To check live: Editor share for the service account on each squad sheet; try Save on a copy first; the Squad name shown in the table (first info column) must equal the configured squad name, because the page maps it to the squad index.
+- Next: Phase 3 (link between roster and daily distribution, dry-run only, per-squad layout adapters).
