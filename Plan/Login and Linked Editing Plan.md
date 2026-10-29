@@ -53,7 +53,7 @@ This part is exactly what the PostgreSQL plan makes easy. The code should sit be
 1. Login, logout, `/api/me`, and guards on existing write routes, with tests. **Done.**
 2. Roster edit: staged edits, batch save, locks, stale checks, with tests. **Done.**
 3. Link logic, dry-run only, per-squad layout adapters. **Done** (`assignments.py`, `POST /api/link/dry-run`, `tools/link_dry_run.py`; see `CLAUDE.md` session 8 for the rules and the choices made on the open points).
-4. Daily edit, written to the day tab and the roster.
+4. Daily edit, written to the day tab and the roster. **Done** (`assignments.commit`, `POST /api/link/save`). The day side is a database-style tab per aircraft and day (`A123-OCT29`: `Name | VAEID | Function | Zone | remark`, see `daily_db.py` and `CLAUDE.md` session 9), not the hand-made layout; the Daily page reads it.
 5. Roster edit, now also writing to the day tab (create or modify).
 6. Mismatch indicator, docs, and the `CLAUDE.md` entry.
 

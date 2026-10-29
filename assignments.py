@@ -35,22 +35,43 @@ Rules (from the plan, section 3 and 4):
   * Roster-origin: the roster is the primary side, the day tab best effort (status "roster_only" when it
     cannot follow, e.g. no day tab for that date: tabs are never created). Daily-origin: all or nothing.
   * One code per cell; two aircraft in a day and '@16H00' shifts are out of scope (dismissed on purpose).
+
+Phase 4 (this file now also WRITES, through commit()): with config.DAILY_WRITE_FORMAT = "database" (the
+default) the day side is not the hand-made day tab but a flat tab per aircraft and day, 'A123-OCT29', with
+row 1 = Name | VAEID | Function | Zone | remark and one person per row (daily_db.py). Differences from the
+rules above, all for that format:
+  * a roster edit to 'A123' (or 'A123-34') puts the person on tab 'A123-<MON><DD>' of that date, creating the
+    tab when it does not exist; Function = the person's POS value as found on the other tabs of that date
+    (kept when already there); Zone = the section title ('A864-34') when the code has a zone, else left
+    empty (UNASSIGNED) or as it was. The person leaves their row on every other database tab of that date.
+  * Normal N / Clear removes the person from every database tab of that date; removing a row moves the
+    rows below up (the tab is a flat table, nothing else is next to it).
+  * Hand-made day tabs are never written in this mode, not even when one has the same name: the plan says
+    why ("roster_only"). Daily-origin moves only work on database tabs.
+commit() writes roster first, then creates missing tabs, then the day cells, and reports a partial failure.
 """
 
 import copy
+import logging
 import re
+from datetime import date as _date
 
 import auth
+import daily_db
 import distribution as dist
 import khdt_review
 import roster_edit
+import sheets_client
 from config import (
+    DAILY_WRITE_FORMAT,
     DISTRIBUTION_ROLE_MARKERS,
     DISTRIBUTION_SQUAD_LAYOUTS,
     LINK_REMOVE_CLEARS_ROSTER,
     LINK_UNASSIGNED_TITLE,
 )
 from engine import is_course_marker, is_red_n, normalize_id
+
+log = logging.getLogger(__name__)
 
 MAX_INTENTS = 200
 MAX_APPEND_ROWS = 60  # how far below the last used row a table may be extended (rows the sheet must have)
@@ -396,7 +417,105 @@ def _days_on(ctx, date_iso):
     return [d for d in ctx["days"] if d["date"] == date_iso]
 
 
+# ------------------------------------------------------------------ database-style day tabs (Phase 4)
+def _db_mode():
+    return DAILY_WRITE_FORMAT == "database"
+
+
+def _real_tab(ctx, tab):
+    """The tab's real name when the spreadsheet already has it (tab names are case-insensitive), else None."""
+    return next((d["tab"] for d in ctx["days"] if dist.fold(d["tab"]) == dist.fold(tab)), None)
+
+
+def _db_tabs(ctx, date_iso):
+    """[(tab, db)] for the day tabs of that date that are in the database layout (hand-made ones are skipped)."""
+    out = []
+    for d in _days_on(ctx, date_iso):
+        db = daily_db.read_grid(_grid(ctx, d["tab"]))
+        if db is not None:
+            out.append((d["tab"], db))
+    return out
+
+
+def _function_of(ctx, emp_id, date_iso):
+    """The person's POS value as listed on any day tab of that date ('' when nobody lists them); database
+    tabs (what the edit functions wrote last) come before hand-made ones."""
+    days = sorted(_days_on(ctx, date_iso), key=lambda d: daily_db.read_grid(_grid(ctx, d["tab"])) is None)
+    for d in days:
+        try:
+            sections = dist.parse_day(_grid(ctx, d["tab"]), [])
+        except ValueError:  # a tab without a table
+            continue
+        for s in sections:
+            for p in s["people"]:
+                if p["id"] == emp_id and p["pos"]:
+                    return p["pos"]
+    return ""
+
+
+def _db_remove(ctx, plan, tab, emp):
+    values = _grid(ctx, tab)
+    db = daily_db.read_grid(values)
+    if db is None:
+        return []
+    records, n = daily_db.without_person(db["records"], emp["id"])
+    if not n:
+        return []
+    plan["notes"].append(f"day tab '{tab}': removed from the tab")
+    return daily_db.diff_writes(tab, values, records, db["cols"])
+
+
+def _db_place(ctx, plan, tab, emp, zone, date_iso):
+    """Writes that list the employee on database tab `tab` (created when the spreadsheet has none of that
+    name). zone None = keep the zone as it is. DaySkip when the tab exists in another layout."""
+    existing = _real_tab(ctx, tab)
+    if existing:
+        values = _grid(ctx, existing)
+        db = daily_db.read_grid(values)
+        if db is None:
+            raise DaySkip(f"tab '{existing}' already exists in the hand-made layout; it is left as it is "
+                          "(only Name | VAEID | Function | Zone | remark tabs are written)")
+        tab, records, cols = existing, db["records"], db["cols"]
+    else:
+        values, records, cols = [], [], None
+        plan["create_tabs"].append({"tab": tab, "date": date_iso, "ac": tab.split("-")[0]})
+    pos = next((r["pos"] for r in records if r["id"] == emp["id"] and r["pos"]), "") or _function_of(ctx, emp["id"], date_iso)
+    try:
+        new, what = daily_db.with_person(records, emp, zone, pos)
+    except ValueError as e:
+        raise DaySkip(str(e))
+    if what is None:
+        plan["notes"].append(f"day tab '{tab}': already listed, nothing to change")
+        return []
+    plan["notes"].append(f"day tab '{tab}': {'new tab created, ' if not existing else ''}person {what}"
+                         + (f" (zone '{zone}')" if zone else ""))
+    return daily_db.diff_writes(tab, values, new, cols)
+
+
 # ------------------------------------------------------------------ roster -> daily
+def _roster_to_db(ctx, plan, intent, emp, new):
+    """The day side of a roster edit when the day tabs are database-style (see the module docstring)."""
+    date_iso, out = intent["date"], []
+    tabs = _db_tabs(ctx, date_iso)
+    if new["kind"] in ("empty", "n"):
+        for tab, _db in tabs:
+            out += _db_remove(ctx, plan, tab, emp)
+        if not out:
+            plan["notes"].append("not listed on any database day tab that day: nothing to remove")
+        return out
+    if new["kind"] != "aircraft":
+        plan["notes"].append(f"'{new['text']}' is a {new['kind']} code: not linked to the Daily Distribution")
+        return out
+    day = _date.fromisoformat(date_iso)
+    tab = daily_db.tab_name(new["aircraft"], day)
+    zone = f"{new['aircraft']}-{new['zone']}" if new.get("zone") else None
+    placed = _db_place(ctx, plan, tab, emp, zone, date_iso)  # may raise DaySkip: then nothing is removed either
+    for other, _db in tabs:  # a person is on one aircraft per day
+        if dist.fold(other) != dist.fold(tab):
+            out += _db_remove(ctx, plan, other, emp)
+    return out + placed
+
+
 def _from_roster(ctx, intent, plan, emp, live):
     sq, layout = ctx["sq"], ctx["layout"]
     edit = dict(intent)
@@ -409,10 +528,12 @@ def _from_roster(ctx, intent, plan, emp, live):
         plan["roster"].append(_roster_write(ctx, update, live["raw"]))
     new = parse_code(update["value"] if update else live["raw"])
     dates_days = _days_on(ctx, intent["date"])
-    n_notes = len(plan["notes"])
+    n_notes, n_create = len(plan["notes"]), len(plan["create_tabs"])
     try:
         out = []
-        if new["kind"] in ("empty", "n"):
+        if _db_mode():
+            out = _roster_to_db(ctx, plan, intent, emp, new)
+        elif new["kind"] in ("empty", "n"):
             for d in dates_days:
                 out += _removal(ctx, plan, d["tab"], emp)
             if not out:
@@ -432,6 +553,7 @@ def _from_roster(ctx, intent, plan, emp, live):
         plan["day"] += out
     except DaySkip as s:
         del plan["notes"][n_notes:]  # notes about writes that will not happen would mislead
+        del plan["create_tabs"][n_create:]
         plan["day_skipped"] = str(s)
         plan["notes"].append(f"day tab not updated: {s}")
 
@@ -445,9 +567,12 @@ def _from_daily(ctx, intent, plan, emp, live, color):
         raise Blocked(f"'{tab}' is not a day tab for {intent['date']}")
     to = intent.get("to")
     to = None if to in (None, "") else str(to).strip()
+    db_mode = _db_mode()
+    if db_mode and daily_db.read_grid(_grid(ctx, tab)) is None:
+        raise Blocked(f"'{tab}' is a hand-made day tab: only Name | VAEID | Function | Zone | remark tabs can be edited")
     try:
         if to is None:  # taken out of the distribution
-            plan["day"] += _removal(ctx, plan, tab, emp)
+            plan["day"] += _db_remove(ctx, plan, tab, emp) if db_mode else _removal(ctx, plan, tab, emp)
             if LINK_REMOVE_CLEARS_ROSTER and live["kind"] == "aircraft":
                 update, why = roster_edit.check(sq, ctx["col_of_date"], {
                     "id": emp["id"], "date": intent["date"], "old": live["raw"], "kind": "clear"})
@@ -480,7 +605,10 @@ def _from_daily(ctx, intent, plan, emp, live, color):
                     raise Blocked(why)
                 if update:
                     plan["roster"].append(_roster_write(ctx, update, live["raw"]))
-        plan["day"] += _place(ctx, plan, tab, title, emp, relocate=True, may_create=unassigned)
+        if db_mode:
+            plan["day"] += _db_place(ctx, plan, tab, emp, "" if unassigned else title, intent["date"])
+        else:
+            plan["day"] += _place(ctx, plan, tab, title, emp, relocate=True, may_create=unassigned)
     except DaySkip as s:
         raise Blocked(str(s))
 
@@ -492,6 +620,10 @@ def _apply(ctx, plan):
     for w in plan["roster"]:
         _set(sq["values"], w["row"], w["col"], w["new"])
         _set(sq["colors"], w["row"], w["col"], None)
+    for t in plan["create_tabs"]:  # later intents of the batch see the new tab (header row only)
+        if _real_tab(ctx, t["tab"]) is None:
+            ctx["_grids"][t["tab"]] = daily_db.new_tab_rows()
+            ctx["days"].append({"tab": t["tab"], "ac": t["ac"], "note": "", "date": t["date"]})
     for w in plan["day"]:
         _set(_grid(ctx, w["tab"]), w["row"], w["col"], w["new"])
 
@@ -501,7 +633,7 @@ def plan_link(ctx, intent, commit=True):
     plan = {"intent": dict(intent), "squad": ctx["index"], "squadName": dist.configured_names()[ctx["index"]]
             if ctx["index"] < len(dist.configured_names()) else f"Squad {ctx['index'] + 1}",
             "layout": ctx["layout"].name, "status": None, "blocked": None, "id": "", "name": "",
-            "roster": [], "day": [], "notes": []}
+            "roster": [], "day": [], "notes": [], "create_tabs": []}
     try:
         origin, date_iso = intent.get("origin"), str(intent.get("date") or "")
         if origin not in ("roster", "daily"):
@@ -523,14 +655,14 @@ def plan_link(ctx, intent, commit=True):
             _from_roster(ctx, intent, plan, emp, live)
         else:
             _from_daily(ctx, intent, plan, emp, live, color)
-        if not plan["roster"] and not plan["day"]:
+        if not plan["roster"] and not plan["day"] and not plan["create_tabs"]:
             plan["status"] = "noop"
         elif plan.get("day_skipped"):
             plan["status"] = "roster_only"
         else:
             plan["status"] = "ok"
     except Blocked as b:
-        plan.update(status="blocked", blocked=str(b), roster=[], day=[], notes=[])
+        plan.update(status="blocked", blocked=str(b), roster=[], day=[], notes=[], create_tabs=[])
     if commit and plan["status"] != "blocked":
         _apply(ctx, plan)
     return plan
@@ -542,9 +674,9 @@ def plan_batch(ctx, intents):
 
 
 # ------------------------------------------------------------------ entry points
-def dry_run(intents, user=None):
-    """Plan every intent against freshly read sheets. Nothing is written anywhere.
-    -> {"plans": [... in the order given ...], "squads": [{name, error}], "lines": [text]}"""
+def _plan_intents(intents, user=None):
+    """Plan every intent against freshly read sheets (nothing is written).
+    -> (plans in the order given, [{squad, name, error}], {squad index: context})"""
     if len(intents) > MAX_INTENTS:
         raise ValueError(f"Too many intents at once ({len(intents)}); the limit is {MAX_INTENTS}.")
     names = dist.configured_names()
@@ -555,9 +687,9 @@ def dry_run(intents, user=None):
             by_squad.setdefault(int(it["squad"]), []).append((n, it))
         except (KeyError, TypeError, ValueError):
             plans[n] = {"intent": it, "status": "blocked", "blocked": "missing or invalid 'squad'", "roster": [],
-                        "day": [], "notes": [], "id": str(it.get("id", "")), "name": "", "squad": None,
-                        "squadName": "", "layout": ""}
-    squads = []
+                        "day": [], "notes": [], "create_tabs": [], "id": str(it.get("id", "")), "name": "",
+                        "squad": None, "squadName": "", "layout": ""}
+    squads, ctxs = [], {}
     for index, items in sorted(by_squad.items()):
         info = {"squad": index, "name": names[index] if 0 <= index < len(names) else f"Squad {index + 1}", "error": None}
         squads.append(info)
@@ -567,15 +699,109 @@ def dry_run(intents, user=None):
             if user is not None and not auth.can_edit(user, index):
                 raise ValueError("You are not allowed to edit this squad.")
             ctx = load_context(index, True)
+            ctxs[index] = ctx
             for n, it in items:
                 plans[n] = plan_link(ctx, it)
         except Exception as e:  # noqa: BLE001 - one unreadable squad must not hide the others
             info["error"] = f"{type(e).__name__}: {e}"
+            ctxs.pop(index, None)
             for n, it in items:
-                plans[n] = plans[n] or {"intent": it, "status": "blocked", "blocked": info["error"], "roster": [],
-                                        "day": [], "notes": [], "id": str(it.get("id", "")), "name": "",
-                                        "squad": index, "squadName": info["name"], "layout": ""}
+                plans[n] = {"intent": it, "status": "blocked", "blocked": info["error"], "roster": [],
+                            "day": [], "notes": [], "create_tabs": [], "id": str(it.get("id", "")), "name": "",
+                            "squad": index, "squadName": info["name"], "layout": ""}
+    return plans, squads, ctxs
+
+
+def dry_run(intents, user=None):
+    """Plan every intent against freshly read sheets. Nothing is written anywhere.
+    -> {"plans": [... in the order given ...], "squads": [{name, error}], "lines": [text]}"""
+    plans, squads, _ = _plan_intents(intents, user)
     return {"plans": plans, "squads": squads, "lines": format_plans(plans)}
+
+
+# ------------------------------------------------------------------ writing (Phase 4)
+def _squad_writes(plans):
+    """The cells and tabs of the plans that may be written, later writes of one cell winning:
+    (roster updates, tabs to create [{tab, ...}], {tab: [cell writes]})."""
+    roster, create, day = {}, {}, {}
+    for p in plans:
+        if p is None or p["status"] in ("blocked", "noop"):
+            continue
+        for w in p["roster"]:
+            roster[(w["row"], w["col"])] = {"row": w["row"], "col": w["col"], "value": w["new"], "color": BLACK}
+        for t in p.get("create_tabs", []):
+            create.setdefault(t["tab"], t)
+        for w in p["day"]:
+            day.setdefault(w["tab"], {})[(w["row"], w["col"])] = {"row": w["row"], "col": w["col"], "value": w["new"]}
+    return list(roster.values()), list(create.values()), {t: list(c.values()) for t, c in day.items()}
+
+
+def _write_squad(ctx, plans):
+    """Write one squad: roster cells first, then the missing day tabs, then the day cells. A failure stops
+    the remaining steps and is reported with what had already been written (no rollback: Sheets has none)."""
+    res = {"squad": ctx["index"], "name": "",
+           "roster_written": 0, "day_written": 0, "created_tabs": [], "partial": False, "error": None}
+    try:
+        if DAILY_WRITE_FORMAT != "database":
+            raise ValueError("Writing is only available for the database day-tab format "
+                             "(config.DAILY_WRITE_FORMAT = 'database').")
+        src = ctx["sq"].get("src")
+        if src is None or getattr(src, "kind", "sheets") != "sheets":
+            raise ValueError("This squad's file is an uploaded Excel (.xlsx), which can't be edited through "
+                             "Google Sheets - convert it to a Google Sheet first.")
+        roster, create, day = _squad_writes(plans)
+        if roster:
+            sheets_client.write_roster_updates(src.id, khdt_review._tab_gid(src.id, ctx["sq"]["title"]), roster)
+            res["roster_written"] = len(roster)
+        for t in create:
+            try:
+                sheets_client.add_sheet(src.id, t["tab"], daily_db.HEADERS)
+            except sheets_client.TabExists:
+                raise ValueError(f"The tab '{t['tab']}' was created by somebody else a moment ago; nothing was "
+                                 "written to it. Reload and try again.")
+            res["created_tabs"].append(t["tab"])
+        for tab, cells in day.items():
+            sheets_client.write_cells(src.id, tab, cells)
+            res["day_written"] += len(cells)
+    except Exception as e:  # noqa: BLE001
+        res["error"] = _explain(e)
+        res["partial"] = bool(res["roster_written"] or res["created_tabs"] or res["day_written"])
+    return res
+
+
+def _explain(e):
+    from googleapiclient.errors import HttpError
+
+    if isinstance(e, HttpError) and e.resp.status in (401, 403):
+        return ("No permission to edit this spreadsheet - share it with the service account as Editor "
+                "(Viewer is enough for reading only).")
+    return f"{type(e).__name__}: {e}"
+
+
+def commit(intents, user=None):
+    """Plan fresh, then write what is plannable (Phase 4): the roster cells first, then the database day
+    tabs. Blocked intents are reported and skipped, never forced. Squads are independent of each other.
+    -> {"plans", "squads": [{squad, name, roster_written, day_written, created_tabs, partial, error}], "lines"}"""
+    plans, squads, ctxs = _plan_intents(intents, user)
+    names = dist.configured_names()
+    results = []
+    for info in squads:
+        index = info["squad"]
+        if info["error"]:
+            results.append({"squad": index, "name": info["name"], "roster_written": 0, "day_written": 0,
+                            "created_tabs": [], "partial": False, "error": info["error"]})
+            continue
+        mine = [p for p in plans if p is not None and p.get("squad") == index]
+        res = _write_squad(ctxs[index], mine)
+        res["name"] = names[index] if index < len(names) else f"Squad {index + 1}"
+        if res["error"]:
+            log.warning("link save, %s: %s (partial=%s)", res["name"], res["error"], res["partial"])
+        else:
+            log.info("link save by %s: %s, roster %d, day %d, new tabs %s", user, res["name"],
+                     res["roster_written"], res["day_written"], res["created_tabs"])
+        results.append(res)
+    khdt_review._drop_caches()  # the page reloads straight after: it must see what was just written
+    return {"plans": plans, "squads": results, "lines": format_plans(plans)}
 
 
 # ------------------------------------------------------------------ printing
@@ -588,6 +814,8 @@ def format_plans(plans):
                      f"({it.get('origin', '?')} edit)")
         if p["blocked"]:
             lines.append(f"    blocked: {p['blocked']}")
+        for t in p.get("create_tabs", []):
+            lines.append(f"    new tab '{t['tab']}' with the header row {' | '.join(daily_db.HEADERS)}")
         for w in p["roster"]:
             lines.append(f"    roster '{w['tab']}'!{w['a1']}: {w['old']!r} -> {w['new']!r}")
         for w in p["day"]:

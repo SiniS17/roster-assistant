@@ -25,7 +25,19 @@ import roster_edit  # noqa: E402
 from engine import find_roster_header_grid  # noqa: E402
 from squad_roster import own_rows_cutoff  # noqa: E402
 
+import pytest  # noqa: E402
+
 N = None
+
+
+@pytest.fixture(autouse=True)
+def _legacy_day_format():
+    """These are the Phase 3 tests of the hand-made day-tab layouts; the database format has its own tests
+    (tests/test_daily_db.py)."""
+    before = a.DAILY_WRITE_FORMAT
+    a.DAILY_WRITE_FORMAT = "legacy"
+    yield
+    a.DAILY_WRITE_FORMAT = before
 
 
 def serial(dd, m=10):
@@ -443,6 +455,7 @@ def test_route_needs_a_login_and_only_plans():
 
 
 if __name__ == "__main__":
+    a.DAILY_WRITE_FORMAT = "legacy"
     failed = 0
     for name, fn in sorted(globals().items()):
         if name.startswith("test_") and callable(fn):

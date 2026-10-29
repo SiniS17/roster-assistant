@@ -64,6 +64,13 @@ LINK_UNASSIGNED_TITLE = "UNASSIGNED"
 # roster cell is left as it is, True = it is cleared. (The plan left this open; False loses nothing.)
 LINK_REMOVE_CLEARS_ROSTER = False
 
+# What the edit functions write on the day side (assignments.commit, Phase 4):
+#   "database" - one flat tab per aircraft and day, named like 'A123-OCT29': row 1 = Name | VAEID | Function |
+#                Zone | remark, one person per row from row 2 (daily_db.py). The tab is created when missing.
+#                Hand-made day tabs are only read, never written.
+#   "legacy"   - fill the hand-made day tabs cell by cell (the Phase 3 dry-run plans; commit refuses them).
+DAILY_WRITE_FORMAT = "database"
+
 # How long (seconds) fetched sheet data is reused before asking Google again.
 # The page's reload button always bypasses this.
 DISTRIBUTION_CACHE_SECONDS = 60

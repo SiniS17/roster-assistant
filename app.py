@@ -175,6 +175,24 @@ def api_link_dry_run():
     return jsonify(ok=True, **result)
 
 
+@app.route("/api/link/save", methods=["POST"])
+@auth.login_required
+def api_link_save():
+    """Phase 4: write a roster edit or a daily move to BOTH sides - the roster cell, then the database-style
+    day tab ('A123-OCT29': Name | VAEID | Function | Zone | remark), which is created when missing. The same
+    intents as /api/link/dry-run, planned fresh against the live sheets; blocked ones are reported, not forced."""
+    body = request.get_json(silent=True) or {}
+    intents = body.get("intents")
+    if not isinstance(intents, list) or not intents:
+        return jsonify(ok=False, error="There is nothing to save."), 400
+    intents = [i for i in intents if isinstance(i, dict)]
+    try:
+        result = assignments.commit(intents, auth.current_user())
+    except Exception as e:
+        return jsonify(ok=False, error=f"{type(e).__name__}: {e}"), 400
+    return jsonify(ok=True, **result)
+
+
 @app.route("/api/khdt/preview", methods=["POST"])
 def api_khdt_preview():
     """KHDT upload -> the proposed changes to the 4 squads' sheets. Writes nothing anywhere (so no login needed)."""
